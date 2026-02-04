@@ -20,6 +20,7 @@ import { TestCaseListComponent } from './components/test-case-list/test-case-lis
 import { ToastNotificationComponent } from './components/shared/toast-notification/toast-notification.component';
 import { FeedbackModalComponent, FeedbackType } from './components/feedback/feedback-modal.component';
 import { FeedbackService } from './services/feedback.service';
+import { AiJqlService } from './services/ai-jql.service';
 
 declare var bootstrap: any;
 
@@ -50,6 +51,14 @@ export class AppComponent implements OnInit {
   componentFilter = '';
   sprintFilter = '';
   statusFilter = '';
+  
+  // AI JQL Search properties
+  aiSearchInput = '';
+  isGeneratingJql = false;
+  showAiSuggestions = false;
+  aiSuggestions: string[] = [];
+  isLoadingAiSuggestions = false;
+  private aiSuggestionsTimeout: any;
   
   // Data properties
   jiraIssues: JiraIssue[] = [];
@@ -156,7 +165,8 @@ export class AppComponent implements OnInit {
     private connectionStatusService: ConnectionStatusService,
     public apiConfig: ApiConfigService,
     private notificationService: NotificationService,
-    private feedbackService: FeedbackService
+    private feedbackService: FeedbackService,
+    private aiJqlService: AiJqlService
   ) {}
 
   ngOnInit(): void {
@@ -164,6 +174,17 @@ export class AppComponent implements OnInit {
     this.subscribeToTestCases();
     this.initializeModals();
     this.initializeMigratedServices();
+    this.subscribeToAiSuggestions();
+  }
+
+  private subscribeToAiSuggestions(): void {
+    // Subscribe to AI suggestions from the service
+    this.aiJqlService.suggestions$.subscribe(suggestions => {
+      this.aiSuggestions = suggestions;
+    });
+    this.aiJqlService.loadingSuggestions$.subscribe(loading => {
+      this.isLoadingAiSuggestions = loading;
+    });
   }
 
   private initializeMigratedServices(): void {
@@ -313,6 +334,7 @@ export class AppComponent implements OnInit {
     this.componentFilter = '';
     this.sprintFilter = '';
     this.statusFilter = '';
+    this.aiSearchInput = '';
     
     // Reset pagination for both tables
     this.issuesCurrentPage = 0;
@@ -327,6 +349,60 @@ export class AppComponent implements OnInit {
     // Reload both tables
     this.loadJiraIssues();
     this.loadJiraTestCases();
+  }
+
+  // AI JQL Search Methods
+  onAiSearchInputChange(event: Event): void {
+    const input = (event.target as HTMLInputElement).value;
+    // Trigger debounced API call for suggestions
+    this.aiJqlService.searchSuggestions(input);
+    this.showAiSuggestions = true;
+  }
+
+  selectAiSuggestion(suggestion: string): void {
+    this.aiSearchInput = suggestion;
+    this.showAiSuggestions = false;
+    this.aiJqlService.clearSuggestions();
+    this.generateJqlFromAi();
+  }
+
+  hideAiSuggestionsDelayed(): void {
+    this.aiSuggestionsTimeout = setTimeout(() => {
+      this.showAiSuggestions = false;
+    }, 200);
+  }
+
+  generateJqlFromAi(): void {
+    if (!this.aiSearchInput.trim() || this.isGeneratingJql) {
+      return;
+    }
+
+    this.isGeneratingJql = true;
+    this.showAiSuggestions = false;
+    this.aiJqlService.clearSuggestions();
+
+    this.aiJqlService.generateJQL(this.aiSearchInput.trim()).subscribe({
+      next: (response) => {
+        if (response.generated_jql) {
+          // Set the JQL filter field with the generated JQL
+          this.jqlFilter = response.generated_jql;
+          
+          // Show success notification
+          this.notificationService.showSuccess('JQL generated successfully!');
+          
+          // Auto-apply the search
+          this.applyFilters();
+        } else if (response.error) {
+          this.notificationService.showError(`Failed to generate JQL: ${response.error}`);
+        }
+        this.isGeneratingJql = false;
+      },
+      error: (error) => {
+        console.error('Error generating JQL:', error);
+        this.notificationService.showError('Failed to generate JQL. Please check your connection and try again.');
+        this.isGeneratingJql = false;
+      }
+    });
   }
 
   // Issues Pagination Methods (Token-based)

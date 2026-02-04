@@ -719,3 +719,27 @@ html[data-bs-theme="dark"] select.form-select:disabled {
   background-color: #FFD54F !important;
   color: #000000;
 }
+
+/* AI JQL Search Suggestions Dropdown */
+.suggestion-item {
+  transition: background-color 0.15s ease-in-out;
+}
+
+.suggestion-item:hover {
+  background-color: var(--bs-primary);
+  color: white;
+}
+
+.suggestion-item:hover i {
+  color: var(--brand-yellow) !important;
+}
+
+[data-bs-theme="dark"] .suggestion-item:hover {
+  background-color: var(--brand-blue);
+}
+
+/* AI Search Input Highlight */
+#aiSearchInput:focus {
+  border-color: var(--brand-cyan);
+  box-shadow: 0 0 0 0.2rem rgba(0, 163, 221, 0.25);
+}

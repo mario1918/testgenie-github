@@ -6,6 +6,93 @@ dotenv.config();
 const CLAUDE_ENDPOINT = "http://10.203.30.40:4000/chat/completions";
 const CLAUDE_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
+export async function generateJQL(data) {
+  try {
+    const { text, available_fields = [] } = data;
+
+    const fieldsContext = available_fields.length > 0 
+      ? `Available Jira fields:\n${available_fields.map(f => `- ${f.name} (id: ${f.id})`).join('\n')}`
+      : '';
+
+    const prompt = `You are a Jira JQL expert. Convert the following natural language request into a valid Jira JQL query.
+
+IMPORTANT RULES:
+- Return ONLY the JQL query string, nothing else
+- No explanations, no markdown, no code blocks
+- Use proper JQL syntax and operators
+- Common JQL operators: =, !=, ~, IN, NOT IN, IS, IS NOT, >, <, >=, <=
+- Common JQL keywords: AND, OR, ORDER BY
+- Date functions: startOfDay(), endOfDay(), startOfWeek(), now()
+- Relative dates: -7d, -1w, -1M (for days, weeks, months ago)
+- Use statusCategory for open/closed status (e.g., statusCategory != Done for open issues)
+- Quote string values that contain spaces
+
+${fieldsContext}
+
+Natural language request: "${text}"
+
+JQL query:`;
+
+    console.log('🔍 Generating JQL for:', text);
+
+    const response = await fetch(CLAUDE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer sk-xJhJPbgYTpyMFEStOMCJeA',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        max_tokens: 500
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Claude API error response:', errorText);
+      throw new Error(`Claude API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+
+    if (!result || !result.choices || !result.choices[0]) {
+      console.error('Invalid response from Claude API:', result);
+      throw new Error('Invalid response from AI model');
+    }
+
+    // Log token usage
+    if (result.usage) {
+      console.log('🔢 JQL Generation Token Usage:');
+      console.log(`   📥 Input: ${result.usage.prompt_tokens || 'N/A'}`);
+      console.log(`   📤 Output: ${result.usage.completion_tokens || 'N/A'}`);
+    }
+
+    // Extract JQL from response - clean up any extra whitespace or quotes
+    let jql = result.choices[0].message.content.trim();
+    
+    // Remove markdown code blocks if present
+    jql = jql.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
+    
+    // Remove surrounding quotes if the AI added them
+    if ((jql.startsWith('"') && jql.endsWith('"')) || (jql.startsWith("'") && jql.endsWith("'"))) {
+      jql = jql.slice(1, -1);
+    }
+
+    console.log('✅ Generated JQL:', jql);
+    return { jql, success: true };
+
+  } catch (err) {
+    console.error("JQL generation error:", err);
+    return { jql: '', success: false, error: err.message };
+  }
+}
+
 export async function generateTestCases(data) {
   try {
     const { 

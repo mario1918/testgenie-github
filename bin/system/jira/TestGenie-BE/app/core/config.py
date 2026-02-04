@@ -60,6 +60,9 @@ class Settings(BaseSettings):
 
     # Atlassian settings
     atlassian_client_id: str = os.getenv("ATLASSIAN_CLIENT_ID", "")
+    
+    # AI Service settings (NodeJS AI service - same as test case generator)
+    ai_service_url: str = os.getenv("AI_SERVICE_URL", "http://localhost:5000")
 
     class Config:
         env_file = ".env"

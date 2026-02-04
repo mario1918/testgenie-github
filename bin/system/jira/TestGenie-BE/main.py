@@ -10,7 +10,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.exception_handlers import setup_exception_handlers
-from app.routers import jira, test_case, zephyr
+from app.routers import jira, test_case, zephyr, ai_jql
 from app.auth.auth_atlassian import router as atlassian_router
 from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -49,6 +49,7 @@ app.include_router(jira.router)
 app.include_router(test_case.router)
 app.include_router(zephyr.router)
 app.include_router(atlassian_router)
+app.include_router(ai_jql.router)
 
 @app.get("/api/health")
 async def health_check():
