@@ -374,7 +374,7 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
             # Cache expired, fetch fresh data
             logger.info("Refreshing suggestions cache...")
             try:
-                comp_data = await jira_service.get_project_components("SE2")
+                comp_data = await jira_service.get_components("SE2")
                 if comp_data:
                     _suggestions_cache["components"] = [c.get("name", "") for c in comp_data if c.get("name")]
             except Exception as e:
