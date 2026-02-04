@@ -418,7 +418,19 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
         else:
             # Check for component keyword (match partial words too)
             if "component" in query or "comp" in query or any(w in ["team"] for w in words):
-                for comp in components[:8]:
+                # Extract text after "component" to filter
+                filter_text = ""
+                if "component " in query:
+                    filter_text = query.split("component ")[-1].strip()
+                elif "comp " in query:
+                    filter_text = query.split("comp ")[-1].strip()
+                
+                # Filter components by partial match
+                filtered_comps = components
+                if filter_text:
+                    filtered_comps = [c for c in components if filter_text.lower() in c.lower()]
+                
+                for comp in filtered_comps[:8]:
                     suggestions.append(f"Show bugs in component {comp}")
                     suggestions.append(f"Show issues in component {comp}")
             
@@ -456,7 +468,19 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
             # Check for sprint keyword (match partial words too)
             elif "sprint" in query or "iteration" in query:
                 if sprints:
-                    for sprint_name in sprints[:8]:
+                    # Extract text after "sprint" to filter
+                    filter_text = ""
+                    if "sprint " in query:
+                        filter_text = query.split("sprint ")[-1].strip()
+                    elif "iteration " in query:
+                        filter_text = query.split("iteration ")[-1].strip()
+                    
+                    # Filter sprints by partial match
+                    filtered_sprints = sprints
+                    if filter_text:
+                        filtered_sprints = [s for s in sprints if filter_text.lower() in s.lower()]
+                    
+                    for sprint_name in filtered_sprints[:8]:
                         suggestions.append(f"Show issues in sprint {sprint_name}")
                         suggestions.append(f"Show bugs in sprint {sprint_name}")
                 else:
