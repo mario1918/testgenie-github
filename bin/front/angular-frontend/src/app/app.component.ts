@@ -58,6 +58,7 @@ export class AppComponent implements OnInit {
   showAiSuggestions = false;
   aiSuggestions: string[] = [];
   isLoadingAiSuggestions = false;
+  selectedSuggestionIndex = -1;
   private aiSuggestionsTimeout: any;
   
   // Data properties
@@ -362,8 +363,51 @@ export class AppComponent implements OnInit {
   selectAiSuggestion(suggestion: string): void {
     this.aiSearchInput = suggestion;
     this.showAiSuggestions = false;
+    this.selectedSuggestionIndex = -1;
     this.aiJqlService.clearSuggestions();
     this.generateJqlFromAi();
+  }
+
+  onAiSearchKeydown(event: KeyboardEvent): void {
+    if (!this.showAiSuggestions || this.aiSuggestions.length === 0) {
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        this.selectedSuggestionIndex = Math.min(
+          this.selectedSuggestionIndex + 1,
+          this.aiSuggestions.length - 1
+        );
+        // Insert selected suggestion into input field for editing
+        if (this.selectedSuggestionIndex >= 0) {
+          this.aiSearchInput = this.aiSuggestions[this.selectedSuggestionIndex];
+        }
+        break;
+
+      case 'ArrowUp':
+        event.preventDefault();
+        this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, -1);
+        // Insert selected suggestion into input field for editing
+        if (this.selectedSuggestionIndex >= 0) {
+          this.aiSearchInput = this.aiSuggestions[this.selectedSuggestionIndex];
+        }
+        break;
+
+      case 'Escape':
+        this.showAiSuggestions = false;
+        this.selectedSuggestionIndex = -1;
+        break;
+
+      case 'Tab':
+        // Insert selected suggestion and allow further editing
+        if (this.selectedSuggestionIndex >= 0) {
+          event.preventDefault();
+          this.aiSearchInput = this.aiSuggestions[this.selectedSuggestionIndex];
+        }
+        break;
+    }
   }
 
   hideAiSuggestionsDelayed(): void {
