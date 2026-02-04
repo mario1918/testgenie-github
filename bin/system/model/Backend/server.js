@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { generateTestCases } from "./claudeClient.js";
+import { generateTestCases, generateJQL } from "./claudeClient.js";
 import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
@@ -213,6 +213,41 @@ app.post("/generate", async (req, res) => {
     res.json(response);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// JQL Generation endpoint
+app.post("/api/generate-jql", async (req, res) => {
+  try {
+    const { text, available_fields = [] } = req.body;
+
+    if (!text || typeof text !== 'string' || text.trim().length < 3) {
+      return res.status(400).json({ 
+        jql: '',
+        success: false,
+        error: 'Text parameter is required and must be at least 3 characters' 
+      });
+    }
+
+    console.log('📝 JQL Generation Request:', text);
+    
+    const result = await generateJQL({ text, available_fields });
+
+    if (!result.success) {
+      console.error('❌ JQL generation failed:', result.error);
+      return res.status(500).json(result);
+    }
+
+    console.log('✅ JQL generated successfully:', result.jql);
+    res.json(result);
+
+  } catch (err) {
+    console.error('❌ JQL generation error:', err.message);
+    res.status(500).json({ 
+      jql: '',
+      success: false,
+      error: err.message 
+    });
   }
 });
 

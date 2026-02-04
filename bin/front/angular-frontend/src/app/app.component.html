@@ -74,6 +74,62 @@
               <h3 class="h5 mb-3"><i class="bi bi-funnel"></i> Search & Filter Jira Issues</h3>
             </div>
             
+            <!-- AI Natural Language Search -->
+            <div class="col-12">
+              <label for="aiSearchInput" class="form-label">
+                <i class="bi bi-magic"></i> AI Search (Natural Language)
+              </label>
+              <div class="position-relative">
+                <div class="input-group">
+                  <span class="input-group-text bg-primary text-white"><i class="bi bi-stars"></i></span>
+                  <input 
+                    type="text" 
+                    class="form-control" 
+                    id="aiSearchInput" 
+                    [(ngModel)]="aiSearchInput"
+                    placeholder="Describe what you want to find (e.g., 'Show open bugs assigned to Ahmed')"
+                    (input)="onAiSearchInputChange($event)"
+                    (focus)="showAiSuggestions = true"
+                    (blur)="hideAiSuggestionsDelayed()"
+                    (keyup.enter)="generateJqlFromAi()"
+                    [disabled]="isGeneratingJql">
+                  <button 
+                    class="btn btn-primary" 
+                    type="button" 
+                    (click)="generateJqlFromAi()"
+                    [disabled]="isGeneratingJql || !aiSearchInput.trim()">
+                    <span *ngIf="isGeneratingJql" class="spinner-border spinner-border-sm me-1"></span>
+                    <i *ngIf="!isGeneratingJql" class="bi bi-magic"></i>
+                    {{ isGeneratingJql ? 'Generating...' : 'Generate JQL' }}
+                  </button>
+                </div>
+                <!-- Autocomplete Suggestions Dropdown -->
+                <div 
+                  *ngIf="showAiSuggestions && (aiSuggestions.length > 0 || isLoadingAiSuggestions)" 
+                  class="position-absolute w-100 mt-1 shadow-sm rounded border bg-body"
+                  style="z-index: 1050; max-height: 250px; overflow-y: auto;">
+                  <!-- Loading indicator -->
+                  <div *ngIf="isLoadingAiSuggestions" class="px-3 py-2 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    Loading suggestions...
+                  </div>
+                  <!-- Suggestions list -->
+                  <div 
+                    *ngFor="let suggestion of aiSuggestions" 
+                    class="px-3 py-2 cursor-pointer suggestion-item"
+                    style="cursor: pointer;"
+                    (mousedown)="selectAiSuggestion(suggestion)">
+                    <i class="bi bi-lightbulb text-warning me-2"></i>
+                    {{ suggestion }}
+                  </div>
+                </div>
+              </div>
+              <div class="form-text">
+                <i class="bi bi-info-circle"></i> 
+                Describe your search in plain English. AI will convert it to JQL automatically.
+              </div>
+            </div>
+
             <!-- JQL Search -->
             <div class="col-12">
               <label for="jqlFilter" class="form-label">JQL Search</label>
@@ -395,18 +451,6 @@
                   [disabled]="!canImportToJira"
                   title="Import test cases to Jira">
                   <i class="bi bi-upload"></i> Import to Jira
-                </button>
-                <button 
-                  (click)="redirectToAutomation()" 
-                  class="btn btn-warning btn-sm"
-                  title="Go to Automation">
-                  <i class="bi bi-gear"></i> Automation
-                </button>
-                <button 
-                  (click)="redirectToRaiseBug()" 
-                  class="btn btn-danger btn-sm"
-                  title="Raise a bug">
-                  <i class="bi bi-bug"></i> Raise a bug
                 </button>
               </div>
             </div>
