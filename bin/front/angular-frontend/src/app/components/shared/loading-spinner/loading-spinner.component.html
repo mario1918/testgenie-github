@@ -1,0 +1,9 @@
+<div class="flex items-center justify-center" [ngClass]="containerClass">
+  <div 
+    class="animate-spin rounded-full border-b-2 border-blue-600"
+    [ngClass]="spinnerClass">
+  </div>
+  @if(message) {
+    <span class="ml-3 text-gray-900 dark:text-white">{{ message }}</span>
+  }
+</div>

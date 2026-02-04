@@ -1,0 +1,29 @@
+@if(notificationService.hasToast()) {
+<div 
+  class="toast-container position-fixed bottom-0 end-0 p-3"
+  style="z-index: 11000;">
+  <div 
+    [ngClass]="toastClass"
+    class="toast show align-items-center text-white border-0"
+    role="alert"
+    aria-live="assertive"
+    aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body d-flex align-items-center">
+        @if(notificationService.type() === 'success') {
+          <i class="bi bi-check-circle-fill me-2" style="font-size: 1.25rem;"></i>
+        }
+        @if(notificationService.type() === 'error') {
+          <i class="bi bi-x-circle-fill me-2" style="font-size: 1.25rem;"></i>
+        }
+        <span>{{ notificationService.message() }}</span>
+      </div>
+      <button 
+        type="button" 
+        class="btn-close btn-close-white me-2 m-auto" 
+        (click)="notificationService.clearToast()"
+        aria-label="Close"></button>
+    </div>
+  </div>
+</div>
+}

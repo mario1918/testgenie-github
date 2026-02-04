@@ -1,0 +1,1058 @@
+<!-- TestCaseGenie Angular Application -->
+<div class="container-fluid">
+  <div class="row g-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+        <!-- Header -->
+        <div class="card-header bg-gradient-primary text-white py-3">
+          <div class="d-flex justify-content-between">
+            <div>
+              <h1 class="h4 mb-0 fw-bold d-flex align-items-center gap-2">
+                <img src="TestGenif.ico" alt="TestCaseGenie Logo" width="52" height="42">
+                <span>{{ title }}</span>
+                <span class="opacity-75" style="font-size: 0.85rem; font-weight: 400; margin-top: 10px;">by</span>
+                <img src="logo_default_white.svg" alt="Company Logo" height="28" style="margin-top: 14px; margin-left: -5px; ">
+              </h1>
+              <p class="mb-0 mt-3 opacity-85" style="font-size: 0.9rem;">
+                Instantly convert <strong>User Stories</strong> into clear, reusable <strong>Test Cases</strong> with AI in seconds!
+              </p>
+            </div>
+            <div class="d-flex flex-column align-items-end" style="gap: 0.25rem">
+              <span class="badge bg-white text-primary px-3 py-2 d-flex align-items-center gap-1">
+                <i class="bi bi-stars text-warning"></i>
+                <span>AI-Powered</span>
+              </span>
+              <div class="d-flex gap-2">
+                <!-- Feedback Dropdown -->
+                <!-- <div class="dropdown">
+                  <button 
+                    class="btn btn-sm btn-outline-light p-0 dropdown-toggle" 
+                    type="button" 
+                    id="feedbackDropdown" 
+                    data-bs-toggle="dropdown" 
+                    aria-expanded="false"
+                    title="Send Feedback"
+                    style="width: 33px; height: 33px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem;">
+                    <i class="bi bi-chat-left-text"></i>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="feedbackDropdown">
+                    <li>
+                      <a class="dropdown-item" href="javascript:void(0)" (click)="openFeedbackModal('compliment')">
+                        <i class="bi bi-emoji-smile text-success me-2"></i> Give a Compliment
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="javascript:void(0)" (click)="openFeedbackModal('problem')">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i> Report a Problem
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="javascript:void(0)" (click)="openFeedbackModal('suggestion')">
+                        <i class="bi bi-lightbulb text-info me-2"></i> Make a Suggestion
+                      </a>
+                    </li>
+                  </ul>
+                </div> -->
+                
+                <!-- Theme Toggle -->
+                <button 
+                  (click)="themeService.toggleTheme()" 
+                  class="btn btn-sm btn-outline-light p-0" 
+                  title="Toggle theme" 
+                  style="width: 33px; height: 33px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem;">
+                  <i class="bi" [ngClass]="themeService.isDarkTheme() ? 'bi-moon-fill' : 'bi-sun-fill'"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-body p-4">
+          <!-- Search and Filters Section -->
+          <div class="row g-3 mb-4">
+            <div class="col-12">
+              <h3 class="h5 mb-3"><i class="bi bi-funnel"></i> Search & Filter Jira Issues</h3>
+            </div>
+            
+            <!-- JQL Search -->
+            <div class="col-12">
+              <label for="jqlFilter" class="form-label">JQL Search</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input 
+                  type="text" 
+                  class="form-control" 
+                  id="jqlFilter" 
+                  [(ngModel)]="jqlFilter"
+                  placeholder="Enter JQL query (e.g., project = SE2 AND status = 'In Progress')"
+                  (keyup.enter)="applyFilters()">
+                <button class="btn btn-outline-primary" type="button" (click)="applyFilters()">
+                  <i class="bi bi-search"></i> Search
+                </button>
+              </div>
+              <div class="form-text">Use JQL syntax to search for specific issues</div>
+            </div>
+
+            <!-- Filter Controls -->
+            <div class="col-md-3">
+              <label for="issueTypeFilter" class="form-label">Issue Type</label>
+              <select class="form-select" id="issueTypeFilter" [(ngModel)]="issueTypeFilter">
+                <option value="">All Types</option>
+                <option value="Story">User Story</option>
+                <option value="Task">Task</option>
+                <option value="Bug">Bug</option>
+                <option value="Epic">Epic</option>
+                <option value="Sub-task">Sub-task</option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label for="componentFilter" class="form-label">Component</label>
+              <select class="form-select" id="componentFilter" [(ngModel)]="componentFilter">
+                <option value="">All Components</option>
+                <option *ngFor="let component of components" [value]="component.name">
+                  {{ component.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label for="sprintFilter" class="form-label">Sprint</label>
+              <select class="form-select" id="sprintFilter" [(ngModel)]="sprintFilter">
+                <option value="">All Sprints</option>
+                <option *ngFor="let sprint of sprints" [value]="sprint.name">
+                  {{ sprint.name }} ({{ sprint.state }})
+                </option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label for="statusFilter" class="form-label">Status</label>
+              <select class="form-select" id="statusFilter" [(ngModel)]="statusFilter">
+                <option value="">All Statuses</option>
+                <option *ngFor="let status of statusOptions" [value]="status">
+                  {{ status }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="col-12">
+              <div class="d-flex gap-2">
+                <button (click)="applyFilters()" class="btn btn-primary">
+                  <i class="bi bi-funnel"></i> Apply Filters
+                </button>
+                <button (click)="clearFilters()" class="btn btn-outline-secondary">
+                  <i class="bi bi-x-circle"></i> Clear All
+                </button>
+                <button (click)="loadJiraIssues()" class="btn btn-outline-info">
+                  <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Jira Issues/Test Cases Tabbed Section -->
+          <div class="mb-4">
+            <!-- Tab Navigation -->
+            <ul class="nav nav-tabs mb-3" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button 
+                  class="nav-link" 
+                  [class.active]="activeTab === 'issues'"
+                  (click)="switchTab('issues')"
+                  type="button">
+                  <i class="bi bi-list-task"></i> Jira Issues
+                  <span class="badge bg-primary ms-2" *ngIf="activeTab === 'issues' && totalResults > 0">{{ totalResults }}</span>
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button 
+                  class="nav-link" 
+                  [class.active]="activeTab === 'testCases'"
+                  (click)="switchTab('testCases')"
+                  type="button">
+                  <i class="bi bi-clipboard-check"></i> Test Cases
+                  <span class="badge bg-success ms-2" *ngIf="activeTab === 'testCases' && jiraTestCases.length > 0">{{ jiraTestCases.length }}</span>
+                </button>
+              </li>
+            </ul>
+
+            <!-- Tab Content: Jira Issues -->
+            <div *ngIf="activeTab === 'issues'">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="h5 mb-0">
+                  <i class="bi bi-list-task"></i> Jira Issues
+                  <span class="badge bg-primary ms-2" *ngIf="totalResults > 0">{{ totalResults }}</span>
+                </h3>
+                <div class="text-muted">{{ paginationInfo }}</div>
+              </div>
+
+            <!-- Issues Table -->
+            <div class="table-responsive rounded-3 border">
+              <table class="table table-hover align-middle mb-0">
+                <thead class="table-light sticky-top">
+                  <tr>
+                    <th style="width: 120px;">Key</th>
+                    <th style="min-width: 200px;">Summary</th>
+                    <th style="min-width: 250px;">Description</th>
+                    <th style="width: 100px;">Type</th>
+                    <th style="width: 100px;">Status</th>
+                    <th style="width: 100px;">Priority</th>
+                    <th style="width: 120px;">Assignee</th>
+                    <th style="width: 120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Loading skeleton -->
+                  <ng-container *ngIf="isLoadingIssues">
+                    <tr *ngFor="let _ of skeletonArray" class="placeholder-glow">
+                      <td><span class="placeholder col-12"></span></td>
+                      <td><span class="placeholder col-12"></span></td>
+                      <td><span class="placeholder col-12"></span></td>
+                      <td><span class="placeholder col-8"></span></td>
+                      <td><span class="placeholder col-8"></span></td>
+                      <td><span class="placeholder col-8"></span></td>
+                      <td><span class="placeholder col-10"></span></td>
+                      <td><span class="placeholder col-10"></span></td>
+                    </tr>
+                  </ng-container>
+
+                  <!-- No Issues Message -->
+                  <tr *ngIf="!isLoadingIssues && jiraIssues.length === 0">
+                    <td colspan="8" class="text-center py-5">
+                      <i class="bi bi-inbox display-1 text-muted"></i>
+                      <p class="mt-3 text-muted">No issues found matching your criteria</p>
+                      <button class="btn btn-outline-primary" (click)="clearFilters()">
+                        <i class="bi bi-arrow-clockwise"></i> Reset Filters
+                      </button>
+                    </td>
+                  </tr>
+
+                  <!-- Issue Rows -->
+                  <ng-container *ngIf="!isLoadingIssues">
+                    <tr *ngFor="let issue of jiraIssues; trackBy: trackByIssueKey" class="fade-in">
+                    <td>
+                      <a [href]="'https://arrowecommerce.atlassian.net/browse/' + issue.key" 
+                         target="_blank" 
+                         class="text-decoration-none fw-semibold text-primary">
+                        {{ issue.key }}
+                        <i class="bi bi-box-arrow-up-right ms-1 small"></i>
+                      </a>
+                    </td>
+                    <td>
+                      <div class="fw-medium">{{ badgeUtils.truncateText(issue.summary, 60) }}</div>
+                      <small class="text-muted" *ngIf="issue.sprint">Sprint: {{ issue.sprint }}</small>
+                    </td>
+                    <td>
+                      <div class="text-muted">{{ badgeUtils.truncateText(issue.description, 120) }}</div>
+                    </td>
+                    <td>
+                      <span 
+                        class="badge" 
+                        [style]="badgeUtils.getIssueTypeBadgeClass(issue.issue_type).style">
+                        {{ issue.issue_type || 'N/A' }}
+                      </span>
+                    </td>
+                    <td>
+                      <span 
+                        class="badge" 
+                        [style]="badgeUtils.getStatusBadgeClass(issue.status).style">
+                        {{ issue.status || 'N/A' }}
+                      </span>
+                    </td>
+                    <td>
+                      <span 
+                        class="badge" 
+                        [style]="badgeUtils.getPriorityBadgeClass(issue.priority).style">
+                        {{ issue.priority || 'N/A' }}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="badge bg-light text-dark border">
+                        {{ issue.assignee || 'Unassigned' }}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="btn-group btn-group-sm">
+                        <button 
+                          (click)="showIssueDetails(issue)"
+                          class="btn btn-primary" 
+                          title="Generate Test Cases">
+                          <i class="bi bi-magic"></i>
+                        </button>
+                        <button 
+                          class="btn btn-outline-info"
+                          (click)="viewIssueDetails(issue)"
+                          title="View Details">
+                          <i class="bi bi-eye"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  </ng-container>
+                </tbody>
+              </table>
+
+              <!-- Pagination -->
+              <div class="d-flex justify-content-between align-items-center p-3 border-top bg-light" *ngIf="jiraIssues.length > 0 || isLoadingIssues">
+                <div class="text-muted">{{ paginationInfo }}</div>
+                <nav>
+                  <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item" [class.disabled]="!canGoToPreviousPage || isLoadingIssues">
+                      <button 
+                        class="page-link" 
+                        (click)="previousPage()"
+                        [disabled]="!canGoToPreviousPage || isLoadingIssues">
+                        <i class="bi bi-chevron-left"></i> Previous
+                      </button>
+                    </li>
+                    <li class="page-item active">
+                      <span class="page-link">
+                        Page {{ issuesCurrentPage + 1 }}
+                      </span>
+                    </li>
+                    <li class="page-item" [class.disabled]="!canGoToNextPage || isLoadingIssues">
+                      <button 
+                        class="page-link" 
+                        (click)="nextPage()"
+                        [disabled]="!canGoToNextPage || isLoadingIssues">
+                        Next <i class="bi bi-chevron-right"></i>
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              </div>
+            </div>
+            </div>
+            <!-- End of Issues Tab -->
+
+            <!-- Tab Content: Test Cases -->
+            <div *ngIf="activeTab === 'testCases'">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="h5 mb-0">
+                  <i class="bi bi-clipboard-check"></i> Test Cases
+                  <span class="badge bg-success ms-2" *ngIf="jiraTestCases.length > 0">{{ jiraTestCases.length }}</span>
+                </h3>
+                <button 
+                  (click)="openCreateTestCaseModal()" 
+                  class="btn btn-primary btn-sm">
+                  <i class="bi bi-plus-circle"></i> Create Test Case
+                </button>
+              </div>
+
+              <!-- Test Cases Grid -->
+              <app-test-case-list
+                [testCases]="jiraTestCases"
+                [isLoading]="isLoadingJiraTestCases"
+                [executionRowLoadingStates]="executionRowLoadingStates"
+                [paginationInfo]="testCasesPaginationInfo"
+                [pageNumbers]="testCasesPageNumbers"
+                (viewTestCase)="handleViewTestCase($event)"
+                (editTestCase)="handleEditTestCase($event)"
+                (deleteTestCase)="handleDeleteTestCase($event)"
+                (createExecution)="openCreateExecutionModal($event)"
+                (refreshTestCases)="loadJiraTestCases()"
+                (goToPage)="testCasesGoToPage($event)"
+                (nextPage)="testCasesNextPage()"
+                (previousPage)="testCasesPreviousPage()">
+              </app-test-case-list>
+            </div>
+            <!-- End of Test Cases Tab -->
+          </div>
+          <!-- End of Tabbed Section -->
+
+          <!-- Generated Test Cases Section (Hidden when viewing Test Cases tab) -->
+          <div class="mb-4" *ngIf="activeTab === 'issues'">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h3 class="h5 mb-0">
+                <i class="bi bi-clipboard-check"></i> Generated Test Cases
+                <span *ngIf="currentIssue" class="badge bg-primary ms-2">{{ currentIssue.key }}</span>
+                <span class="badge bg-secondary ms-1" *ngIf="testCases.length > 0">{{ testCases.length }}</span>
+              </h3>
+              <div class="d-flex gap-2">
+                <button 
+                  (click)="generateMoreTestCases()" 
+                  class="btn btn-outline-primary btn-sm" 
+                  [disabled]="!currentIssue || isGeneratingTestCases"
+                  title="Generate additional test cases">
+                  <i class="bi bi-plus-circle"></i> Generate More
+                </button>
+                <button 
+                  (click)="showAddTestCaseModal()" 
+                  class="btn btn-primary btn-sm">
+                  <i class="bi bi-plus"></i> Add Manual
+                </button>
+                <button 
+                  (click)="exportToExcel()" 
+                  class="btn btn-success btn-sm" 
+                  [disabled]="testCases.length === 0">
+                  <i class="bi bi-file-earmark-excel"></i> Export Excel
+                </button>
+                <button 
+                  (click)="showImportToJiraModal()" 
+                  class="btn btn-info btn-sm" 
+                  [disabled]="!canImportToJira"
+                  title="Import test cases to Jira">
+                  <i class="bi bi-upload"></i> Import to Jira
+                </button>
+                <button 
+                  (click)="redirectToAutomation()" 
+                  class="btn btn-warning btn-sm"
+                  title="Go to Automation">
+                  <i class="bi bi-gear"></i> Automation
+                </button>
+                <button 
+                  (click)="redirectToRaiseBug()" 
+                  class="btn btn-danger btn-sm"
+                  title="Raise a bug">
+                  <i class="bi bi-bug"></i> Raise a bug
+                </button>
+              </div>
+            </div>
+
+            <!-- Test Cases Loading -->
+            <div *ngIf="isGeneratingTestCases" class="text-center py-5 border rounded-3 bg-light">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Generating...</span>
+              </div>
+              <p class="mt-2 text-muted">AI is generating test cases...</p>
+            </div>
+
+            <!-- Test Cases Table -->
+            <div *ngIf="!isGeneratingTestCases" class="table-responsive rounded-3 border">
+              <table class="table table-striped table-hover align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 80px;">ID</th>
+                    <th style="min-width: 200px;">Title</th>
+                    <th style="min-width: 300px;">Steps</th>
+                    <th style="min-width: 250px;">Expected Result</th>
+                    <th style="width: 100px;">Priority</th>
+                    <th style="width: 120px;">Status</th>
+                    <th style="width: 120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- No Test Cases Message -->
+                  <tr *ngIf="testCases.length === 0">
+                    <td colspan="7" class="text-center py-5">
+                      <i class="bi bi-clipboard-x display-1 text-muted"></i>
+                      <p class="mt-3 text-muted">No test cases generated yet</p>
+                      <p class="text-muted">Select a Jira issue and click "Generate" to create test cases</p>
+                    </td>
+                  </tr>
+
+                  <!-- Test Case Rows -->
+                  <tr *ngFor="let testCase of testCases; let i = index; trackBy: trackByTestCaseId" class="fade-in">
+                    <td class="fw-medium">{{ testCase.id }}</td>
+                    <td>
+                      <div class="fw-medium">{{ testCase.title }}</div>
+                    </td>
+                    <td>
+                      <div class="text-wrap" style="max-width: 300px; word-wrap: break-word; line-height: 1.4;" [innerHTML]="formatStepsAsHtml(testCase.steps)"></div>
+                    </td>
+                    <td>
+                      <div class="text-wrap" style="max-width: 250px; white-space: pre-line;">{{ testCase.expectedResult }}</div>
+                    </td>
+                    <td>
+                      <span 
+                        class="badge" 
+                        [ngClass]="{
+                          'bg-danger': testCase.priority === 'high',
+                          'bg-warning text-dark': testCase.priority === 'medium',
+                          'bg-info': testCase.priority === 'low'
+                        }">
+                        {{ testCase.priority }}
+                      </span>
+                    </td>
+                    <td>
+                      <select 
+                        class="form-select form-select-sm"
+                        [(ngModel)]="testCase.executionStatus"
+                        (change)="updateTestCaseStatus(testCase)">
+                        <option value="not-executed">Not Executed</option>
+                        <option value="passed">Passed</option>
+                        <option value="failed">Failed</option>
+                        <option value="blocked">Blocked</option>
+                      </select>
+                    </td>
+                    <td>
+                      <div class="btn-group btn-group-sm">
+                        <button 
+                          (click)="showEditGeneratedTestCaseModal(testCase)" 
+                          class="btn btn-outline-primary" 
+                          title="Edit Test Case">
+                          <i class="bi bi-pencil"></i>
+                        </button>
+                        <button 
+                          (click)="deleteGeneratedTestCase(testCase.id)" 
+                          class="btn btn-outline-danger" 
+                          title="Delete Test Case">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <!-- Connection Status -->
+          <!-- <div class="alert mt-4" [ngClass]="{
+            'alert-success': connectionStatus.backend && connectionStatus.jiraApi,
+            'alert-warning': connectionStatus.backend || connectionStatus.jiraApi,
+            'alert-danger': !connectionStatus.backend && !connectionStatus.jiraApi
+          }">
+            <h5><i class="bi bi-wifi"></i> Backend Connection Status</h5>
+            <div class="row">
+              <div class="col-md-6">
+                <p class="mb-1">
+                  <span class="badge me-2" [ngClass]="{
+                    'bg-success': connectionStatus.backend,
+                    'bg-danger': !connectionStatus.backend
+                  }">
+                    <i class="bi" [ngClass]="{
+                      'bi-check-circle': connectionStatus.backend,
+                      'bi-x-circle': !connectionStatus.backend
+                    }"></i>
+                  </span>
+                  <strong>Backend API:</strong> 
+                  {{ connectionStatus.backend ? 'Connected' : 'Disconnected' }}
+                </p>
+                <small class="text-muted">http://localhost:5000</small>
+              </div>
+              <div class="col-md-6">
+                <p class="mb-1">
+                  <span class="badge me-2" [ngClass]="{
+                    'bg-success': connectionStatus.jiraApi,
+                    'bg-danger': !connectionStatus.jiraApi
+                  }">
+                    <i class="bi" [ngClass]="{
+                      'bi-check-circle': connectionStatus.jiraApi,
+                      'bi-x-circle': !connectionStatus.jiraApi
+                    }"></i>
+                  </span>
+                  <strong>Jira API:</strong> 
+                  {{ connectionStatus.jiraApi ? 'Connected' : 'Disconnected' }}
+                </p>
+                <small class="text-muted">http://localhost:8000/api/jira</small>
+              </div>
+            </div>
+            <small class="text-muted">Last checked: {{ connectionStatus.lastChecked | date:'short' }}</small>
+          </div> -->
+
+          <!-- <div class="alert alert-info mt-4">
+            <h5><i class="bi bi-info-circle"></i> Backend API Integration</h5>
+            <p class="mb-0">Your Angular frontend is now ready to connect to your backend APIs:</p>
+            <ul class="mb-0 mt-2">
+              <li><strong>Backend API (Port 5000):</strong> Test case generation, AI processing</li>
+              <li><strong>Jira API Proxy (Port 8000):</strong> Jira issues, components, sprints</li>
+              <li><strong>Configuration:</strong> Easily configurable via ApiConfigService</li>
+              <li><strong>Error Handling:</strong> Built-in error handling and retry logic</li>
+            </ul>
+          </div> -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Components -->
+
+<!-- Issue Details Modal -->
+<div class="modal fade" id="issueDetailsModal" tabindex="-1" aria-labelledby="issueDetailsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="issueDetailsModalLabel">
+          <i class="bi bi-magic"></i> Generate Test Cases
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" *ngIf="currentIssue">
+        <div class="row">
+          <div class="col-md-6">
+            <h6><i class="bi bi-tag"></i> Issue Details</h6>
+            <table class="table table-sm">
+              <tr>
+                <td><strong>Key:</strong></td>
+                <td>{{ currentIssue.key }}</td>
+              </tr>
+              <tr>
+                <td><strong>Type:</strong></td>
+                <td>
+                  <span class="badge" [style]="badgeUtils.getIssueTypeBadgeClass(currentIssue.issue_type).style">
+                    {{ currentIssue.issue_type }}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Status:</strong></td>
+                <td>
+                  <span class="badge" [style]="badgeUtils.getStatusBadgeClass(currentIssue.status).style">
+                    {{ currentIssue.status }}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Priority:</strong></td>
+                <td>
+                  <span class="badge" [style]="badgeUtils.getPriorityBadgeClass(currentIssue.priority).style">
+                    {{ currentIssue.priority }}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Assignee:</strong></td>
+                <td>{{ currentIssue.assignee || 'Unassigned' }}</td>
+              </tr>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <h6><i class="bi bi-info-circle"></i> Summary</h6>
+            <p class="text-muted">{{ currentIssue.summary }}</p>
+            <h6><i class="bi bi-file-text"></i> Description</h6>
+            <div class="text-muted" style="max-height: 200px; overflow-y: auto;">
+              {{ currentIssue.description || 'No description available' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Special Comments Section -->
+        <div class="mt-4">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0"><i class="bi bi-chat-dots"></i> Special Comments for AI (Optional)</h6>
+            <button 
+              type="button" 
+              class="btn btn-outline-secondary btn-sm" 
+              (click)="clearSpecialComments()"
+              [disabled]="!specialComments"
+              title="Clear special comments">
+              <i class="bi bi-x-circle"></i> Clear
+            </button>
+          </div>
+          <p class="text-muted small">Add additional instructions or context to enhance the AI-generated test cases:</p>
+          <textarea 
+            class="form-control" 
+            [(ngModel)]="specialComments"
+            rows="4" 
+            placeholder="e.g., Focus on edge cases, include security testing, consider mobile scenarios, test with different user roles..."
+            style="resize: vertical;">
+          </textarea>
+          <div class="form-text">
+            <i class="bi bi-lightbulb"></i> 
+            These comments will be added to the prompt sent to the AI to generate more targeted test cases.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="generateTestCases()"
+          [disabled]="isGeneratingTestCases">
+          <span *ngIf="isGeneratingTestCases" class="spinner-border spinner-border-sm me-2" role="status"></span>
+          <i class="bi bi-magic" *ngIf="!isGeneratingTestCases"></i>
+          {{ isGeneratingTestCases ? 'Generating...' : 'Generate Test Cases' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Test Case Modal -->
+<div class="modal fade" id="addTestCaseModal" tabindex="-1" aria-labelledby="addTestCaseModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addTestCaseModalLabel">
+          <i class="bi bi-plus-circle"></i> Add Manual Test Case
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form>
+          <div class="mb-3">
+            <label for="testCaseTitle" class="form-label">Test Case Title *</label>
+            <input 
+              type="text" 
+              class="form-control" 
+              id="testCaseTitle" 
+              [(ngModel)]="newTestCase.title"
+              name="title"
+              placeholder="Enter a descriptive title for the test case"
+              required>
+          </div>
+          
+          <div class="mb-3">
+            <label for="testCaseSteps" class="form-label">Test Steps *</label>
+            <textarea 
+              class="form-control" 
+              id="testCaseSteps" 
+              rows="4"
+              [(ngModel)]="newTestCase.steps"
+              name="steps"
+              placeholder="1. Step one&#10;2. Step two&#10;3. Step three"
+              required></textarea>
+          </div>
+          
+          <div class="mb-3">
+            <label for="testCaseExpectedResult" class="form-label">Expected Result *</label>
+            <textarea 
+              class="form-control" 
+              id="testCaseExpectedResult" 
+              rows="3"
+              [(ngModel)]="newTestCase.expectedResult"
+              name="expectedResult"
+              placeholder="Describe the expected outcome"
+              required></textarea>
+          </div>
+          
+          <div class="mb-3">
+            <label for="testCasePriority" class="form-label">Priority</label>
+            <select class="form-select" id="testCasePriority" [(ngModel)]="newTestCase.priority" name="priority">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="addTestCase()"
+          [disabled]="!newTestCase.title || !newTestCase.steps || !newTestCase.expectedResult">
+          <i class="bi bi-plus-circle"></i> Add Test Case
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- Issue Details View Modal -->
+<div class="modal fade" id="viewIssueModal" tabindex="-1" aria-labelledby="viewIssueModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewIssueModalLabel">
+          <i class="bi bi-eye"></i> Issue Details
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" *ngIf="currentIssue">
+        <div class="row">
+          <div class="col-md-8">
+            <h4>{{ currentIssue.summary }}</h4>
+            <div class="mb-3">
+              <span class="badge me-2" [style]="badgeUtils.getIssueTypeBadgeClass(currentIssue.issue_type).style">
+                {{ currentIssue.issue_type }}
+              </span>
+              <span class="badge me-2" [style]="badgeUtils.getStatusBadgeClass(currentIssue.status).style">
+                {{ currentIssue.status }}
+              </span>
+              <span class="badge me-2" [style]="badgeUtils.getPriorityBadgeClass(currentIssue.priority).style">
+                {{ currentIssue.priority }}
+              </span>
+            </div>
+            
+            <h6>Description</h6>
+            <div class="border rounded p-3 bg-light mb-3" style="white-space: pre-wrap;">
+              {{ currentIssue.description || 'No description available' }}
+            </div>
+          </div>
+          
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-info-circle"></i> Issue Information</h6>
+              </div>
+              <div class="card-body">
+                <table class="table table-sm table-borderless">
+                  <tr>
+                    <td><strong>Key:</strong></td>
+                    <td>
+                      <a [href]="'https://arrowecommerce.atlassian.net/browse/' + currentIssue.key" 
+                         target="_blank" 
+                         class="text-decoration-none">
+                        {{ currentIssue.key }}
+                        <i class="bi bi-box-arrow-up-right ms-1 small"></i>
+                      </a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><strong>Assignee:</strong></td>
+                    <td>{{ currentIssue.assignee || 'Unassigned' }}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Reporter:</strong></td>
+                    <td>{{ currentIssue.reporter || 'N/A' }}</td>
+                  </tr>
+                  <tr *ngIf="currentIssue.sprint">
+                    <td><strong>Sprint:</strong></td>
+                    <td>{{ currentIssue.sprint }}</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="generateTestCasesFromView()">
+          <i class="bi bi-magic"></i> Generate Test Cases
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import to Jira Modal -->
+<div class="modal fade" id="importToJiraModal" tabindex="-1" aria-labelledby="importToJiraModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="importToJiraModalLabel">
+          <i class="bi bi-upload"></i> Import Test Cases to Jira
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info">
+          <i class="bi bi-info-circle"></i>
+          <strong> Import Summary:</strong> {{ testCases.length }} test cases will be imported to Jira project <strong>{{ apiConfig.jiraProjectKey }}</strong>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label for="versionSelect" class="form-label">Target Version *</label>
+              <select class="form-select" id="versionSelect" [(ngModel)]="selectedVersionId" (change)="onVersionChange()" [disabled]="isLoadingVersions">
+                <option value="">Select a version</option>
+                <option *ngFor="let version of jiraVersions" [value]="version.id">
+                  {{ version.name }}
+                </option>
+              </select>
+              <div class="form-text" *ngIf="isLoadingVersions">
+                <span class="spinner-border spinner-border-sm me-2"></span>Loading versions...
+              </div>
+              <div class="form-text" *ngIf="!isLoadingVersions">
+                Choose a version to associate the test cases with
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label for="testCycleSelect" class="form-label">Test Cycle *</label>
+               <select class="form-select" id="testCycleSelect" [(ngModel)]="selectedCycleId" [disabled]="isTestCycleDisabled || isLoadingCycles">
+                <option value="">Select a test cycle</option>
+                <option *ngFor="let cycle of testCycles" [value]="cycle.id">
+                  {{ cycle.name }}
+                </option>
+              </select>
+              <div class="form-text" *ngIf="isLoadingCycles">
+                <span class="spinner-border spinner-border-sm me-2"></span>Loading test cycles...
+              </div>
+              <div class="form-text" *ngIf="!isLoadingCycles">
+                Choose a test cycle for the test cases
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sub-tasks dropdown -->
+        <div class="row" *ngIf="currentIssue">
+          <div class="col-12">
+            <div class="mb-3">
+              <label for="subtaskSelect" class="form-label">
+                <i class="bi bi-diagram-3"></i> Import to Sub-task <span class="text-danger">*</span>
+              </label>
+              <select class="form-select" id="subtaskSelect" [(ngModel)]="selectedSubtaskKey" [disabled]="isLoadingSubtasks || subtasks.length === 0">
+                <option value="">-- Select a Sub-task --</option>
+                <option *ngFor="let subtask of subtasks" [value]="subtask.key">
+                  {{ subtask.key }} - {{ subtask.summary }} (Assignee: {{ subtask.assignee || 'Unassigned' }})
+                </option>
+              </select>
+              <div class="form-text text-danger" *ngIf="!isLoadingSubtasks && subtasks.length === 0">
+                <i class="bi bi-exclamation-triangle-fill"></i> No sub-tasks available. Please create a sub-task first to import test cases.
+              </div>
+              <div class="form-text" *ngIf="isLoadingSubtasks">
+                <span class="spinner-border spinner-border-sm me-2"></span>Loading sub-tasks...
+              </div>
+              <div class="form-text" *ngIf="!isLoadingSubtasks && subtasks.length > 0">
+                Select a sub-task to import test cases. Import is only allowed to sub-tasks.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-list-check"></i> Test Cases to Import</h6>
+          </div>
+          <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+            <div class="row g-2" *ngFor="let testCase of testCases; let i = index">
+              <div class="col-1">
+                <span class="badge bg-primary">{{ i + 1 }}</span>
+              </div>
+              <div class="col-11">
+                <div class="fw-medium">{{ testCase.title }}</div>
+                <small class="text-muted">Priority: {{ testCase.priority }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- <div class="alert alert-warning mt-3">
+          <i class="bi bi-exclamation-triangle"></i>
+          <strong> Note:</strong> This will create new test case issues in Jira. Make sure you have the necessary permissions.
+        </div> -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button 
+          type="button" 
+          class="btn btn-info" 
+          (click)="importToJira()"
+          [disabled]="!canConfirmImport">
+          <span *ngIf="isImportingToJira" class="spinner-border spinner-border-sm me-2" role="status"></span>
+          <i class="bi bi-upload" *ngIf="!isImportingToJira"></i>
+          {{ isImportingToJira ? 'Importing...' : 'Import to Jira' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Generated Test Case Modal (Inline Bootstrap Modal for Generated Test Cases) -->
+<div class="modal fade" id="editGeneratedTestCaseModal" tabindex="-1" aria-labelledby="editGeneratedTestCaseModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editGeneratedTestCaseModalLabel">
+          <i class="bi bi-pencil"></i> Edit Generated Test Case
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" *ngIf="editingGeneratedTestCase">
+        <form>
+          <div class="mb-3">
+            <label for="editGeneratedTestCaseTitle" class="form-label">Test Case Title *</label>
+            <input 
+              type="text" 
+              class="form-control" 
+              id="editGeneratedTestCaseTitle" 
+              [(ngModel)]="editingGeneratedTestCase.title"
+              name="title"
+              required>
+          </div>
+          
+          <div class="mb-3">
+            <label for="editGeneratedTestCaseSteps" class="form-label">Test Steps *</label>
+            <textarea 
+              class="form-control" 
+              id="editGeneratedTestCaseSteps" 
+              rows="4"
+              [(ngModel)]="editingGeneratedTestCase.steps"
+              name="steps"
+              required></textarea>
+          </div>
+          
+          <div class="mb-3">
+            <label for="editGeneratedTestCaseExpectedResult" class="form-label">Expected Result *</label>
+            <textarea 
+              class="form-control" 
+              id="editGeneratedTestCaseExpectedResult" 
+              rows="3"
+              [(ngModel)]="editingGeneratedTestCase.expectedResult"
+              name="expectedResult"
+              required></textarea>
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6">
+              <label for="editGeneratedTestCasePriority" class="form-label">Priority</label>
+              <select class="form-select" id="editGeneratedTestCasePriority" [(ngModel)]="editingGeneratedTestCase.priority" name="priority">
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label for="editGeneratedTestCaseStatus" class="form-label">Execution Status</label>
+              <select class="form-select" id="editGeneratedTestCaseStatus" [(ngModel)]="editingGeneratedTestCase.executionStatus" name="executionStatus">
+                <option value="not-executed">Not Executed</option>
+                <option value="passed">Passed</option>
+                <option value="failed">Failed</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="saveGeneratedTestCaseChanges()"
+          [disabled]="!editingGeneratedTestCase?.title || !editingGeneratedTestCase?.steps || !editingGeneratedTestCase?.expectedResult">
+          <i class="bi bi-check-circle"></i> Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Test Case Modal (Migrated Feature) -->
+<app-create-test-case-modal
+  [isVisible]="showCreateTestCaseModal"
+  (closeModal)="closeCreateTestCaseModal()">
+</app-create-test-case-modal>
+
+<!-- Edit Jira Test Case Modal (Component Modal for Jira Test Cases) -->
+<app-edit-test-case-modal
+  [isVisible]="showEditTestCaseModal"
+  [testCase]="editingTestCase"
+  (closeModal)="closeEditTestCaseModal()">
+</app-edit-test-case-modal>
+
+<!-- View Test Case Modal -->
+<app-view-test-case-modal
+  [isVisible]="showViewTestCaseModal"
+  [testCase]="viewingTestCase"
+  (closeModal)="closeViewTestCaseModal()"
+  (editTestCase)="editTestCaseFromView($event)">
+</app-view-test-case-modal>
+
+<!-- Create Execution Modal (Migrated Feature) -->
+<app-create-execution-modal
+  [isVisible]="showCreateExecutionModal"
+  [testCaseId]="selectedTestCaseForExecution"
+  (closeModal)="closeCreateExecutionModal()"
+  (executionCreated)="handleExecutionCreated($event)">
+</app-create-execution-modal>
+
+<!-- Toast Notifications -->
+<app-toast-notification></app-toast-notification>
+
+<!-- Feedback Modal -->
+<app-feedback-modal
+  [isVisible]="showFeedbackModal"
+  [feedbackType]="currentFeedbackType"
+  (closeModal)="closeFeedbackModal()"
+  (submitFeedback)="handleFeedbackSubmit($event)">
+</app-feedback-modal>
+
+<router-outlet />

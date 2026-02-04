@@ -1,0 +1,1855 @@
+import React, { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import ZephyrPanel from "./ZephyrPanel";
+
+const API_BASE_URL = "/ai-api";
+const ZEPHYR_APP_URL = import.meta.env.VITE_ZEPHYR_APP_URL || "http://localhost:3006";
+
+type TabKey = "zephyr" | "ai";
+
+type BugReport = {
+  title: string;
+  description?: string;
+  stepsToReproduce: string[];
+  expectedResult: string;
+  actualResult: string;
+  component: string;
+  environment: string;
+  reproducibility?: string;
+  workaround?: string | null;
+  impact?: string;
+  jiraPriority?: string;
+};
+
+type JiraComponent = { id: string; name: string };
+type JiraIssue = { key: string; summary: string };
+type JiraUser = { accountId: string; displayName: string; emailAddress: string; avatarUrl: string };
+type JiraSprint = { id: string; name: string; state: string };
+type JiraPriority = { id: string; name: string };
+
+type PromptJiraHints = {
+  components: string[];
+  parentKey: string;
+  sprintName: string;
+  testCaseId: string;
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<TabKey>("zephyr");
+
+  const [input, setInput] = useState("");
+  const DEFAULT_INPUT_HEIGHT = 60;
+  const [inputHeight, setInputHeight] = useState<number>(DEFAULT_INPUT_HEIGHT);
+  const [files, setFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string } | null>(null);
+  const [report, setReport] = useState<BugReport | null>(null);
+  const [submittedImagePreviews, setSubmittedImagePreviews] = useState<string[]>([]);
+  const [submittedQuestion, setSubmittedQuestion] = useState<string | null>(null);
+  const [submittedFiles, setSubmittedFiles] = useState<File[]>([]);
+  const [conversationHistory, setConversationHistory] = useState<{role: string; content: string}[]>([]);
+  const [chatMessages, setChatMessages] = useState<{role: string; content: string; report?: BugReport}[]>([]);
+  const [streamingText, setStreamingText] = useState("");
+
+  const [jiraComponents, setJiraComponents] = useState<JiraComponent[]>([]);
+  const [jiraIssues, setJiraIssues] = useState<JiraIssue[]>([]);
+  const [jiraUsers, setJiraUsers] = useState<JiraUser[]>([]);
+  const [jiraSprints, setJiraSprints] = useState<JiraSprint[]>([]);
+  const [jiraPriorities, setJiraPriorities] = useState<JiraPriority[]>([]);
+  const [selectedComponents, setSelectedComponents] = useState<{id: string; name: string}[]>([]);
+  const [selectedParent, setSelectedParent] = useState("");
+  const [selectedRelatedToKeys, setSelectedRelatedToKeys] = useState<string[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState("");
+  const [selectedSprint, setSelectedSprint] = useState("");
+  const [selectedJiraPriority, setSelectedJiraPriority] = useState("");
+  const [jiraComment, setJiraComment] = useState("");
+  const [jiraLoading, setJiraLoading] = useState(false);
+  const [jiraResult, setJiraResult] = useState<{ url: string; key: string } | null>(null);
+
+  const [deletedReportFields, setDeletedReportFields] = useState<Record<string, boolean>>({});
+
+  const [promptJiraHints, setPromptJiraHints] = useState<PromptJiraHints>({
+    components: [],
+    parentKey: "",
+    sprintName: "",
+    testCaseId: ""
+  });
+
+  const [componentSearch, setComponentSearch] = useState("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const [selectedAssigneeLabel, setSelectedAssigneeLabel] = useState("");
+  const [isAssigneeEditing, setIsAssigneeEditing] = useState(false);
+  const [parentSearch, setParentSearch] = useState("");
+  const [relatedToSearch, setRelatedToSearch] = useState("");
+  const [sprintSearch, setSprintSearch] = useState("");
+  const [showComponentList, setShowComponentList] = useState(false);
+  const [showAssigneeList, setShowAssigneeList] = useState(false);
+  const [showParentList, setShowParentList] = useState(false);
+  const [showRelatedToList, setShowRelatedToList] = useState(false);
+  const [showSprintList, setShowSprintList] = useState(false);
+  const [relatedToIssues, setRelatedToIssues] = useState<JiraIssue[]>([]);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
+  const reportTopRef = useRef<HTMLDivElement | null>(null);
+  const suppressAutoScrollRef = useRef(false);
+  const streamingTextRef = useRef<HTMLDivElement | null>(null);
+  const streamingAutoScrollRef = useRef(true);
+  const editableReportRef = useRef<HTMLDivElement | null>(null);
+  const editableTitleRef = useRef<HTMLInputElement | null>(null);
+  const lastRoutingUserSearchRef = useRef<string | null>(null);
+  const assigneePrevRef = useRef<{ id: string; label: string } | null>(null);
+  const assigneeWrapRef = useRef<HTMLDivElement | null>(null);
+  const jiraSectionRef = useRef<HTMLDivElement | null>(null);
+
+  function AutoResizeEditTextarea({ value, onChange, rows }: { value: string; onChange: (v: string) => void; rows?: number }) {
+    const ref = useRef<HTMLTextAreaElement | null>(null);
+    const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+    const DEFAULT_HEIGHT = 60;
+    const MAX_HEIGHT = 420;
+
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+
+      el.style.height = "auto";
+      if (!String(value || "").trim()) {
+        el.style.height = `${DEFAULT_HEIGHT}px`;
+        return;
+      }
+
+      const next = Math.min(MAX_HEIGHT, Math.max(DEFAULT_HEIGHT, el.scrollHeight));
+      el.style.height = `${next}px`;
+    }, [value]);
+
+    function beginResize(e: React.PointerEvent<HTMLDivElement>) {
+      const el = ref.current;
+      if (!el) return;
+
+      e.preventDefault();
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      dragRef.current = { pointerId: e.pointerId, startY: e.clientY, startHeight: rect.height };
+    }
+
+    function onResizeMove(e: React.PointerEvent<HTMLDivElement>) {
+      const el = ref.current;
+      const drag = dragRef.current;
+      if (!el || !drag || drag.pointerId !== e.pointerId) return;
+
+      const dy = e.clientY - drag.startY;
+      const next = Math.min(MAX_HEIGHT, Math.max(DEFAULT_HEIGHT, Math.round(drag.startHeight + dy)));
+      el.style.height = `${next}px`;
+    }
+
+    function endResize(e: React.PointerEvent<HTMLDivElement>) {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      dragRef.current = null;
+    }
+
+    return (
+      <div className="editTextareaWrap">
+        <textarea
+          className="editTextarea"
+          ref={ref}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={rows}
+        />
+        <div
+          className="editTextareaResizeHandle"
+          onPointerDown={beginResize}
+          onPointerMove={onResizeMove}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+        />
+      </div>
+    );
+  }
+
+  function AutoResizeCommentTextarea({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+    const ref = useRef<HTMLTextAreaElement | null>(null);
+    const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+    const DEFAULT_HEIGHT = 96;
+    const MAX_HEIGHT = 420;
+
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+
+      el.style.height = "auto";
+      if (!String(value || "").trim()) {
+        el.style.height = `${DEFAULT_HEIGHT}px`;
+        return;
+      }
+
+      const next = Math.min(MAX_HEIGHT, Math.max(DEFAULT_HEIGHT, el.scrollHeight));
+      el.style.height = `${next}px`;
+    }, [value]);
+
+    function beginResize(e: React.PointerEvent<HTMLDivElement>) {
+      const el = ref.current;
+      if (!el) return;
+
+      e.preventDefault();
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      dragRef.current = { pointerId: e.pointerId, startY: e.clientY, startHeight: rect.height };
+    }
+
+    function onResizeMove(e: React.PointerEvent<HTMLDivElement>) {
+      const el = ref.current;
+      const drag = dragRef.current;
+      if (!el || !drag || drag.pointerId !== e.pointerId) return;
+
+      const dy = e.clientY - drag.startY;
+      const next = Math.min(MAX_HEIGHT, Math.max(DEFAULT_HEIGHT, Math.round(drag.startHeight + dy)));
+      el.style.height = `${next}px`;
+    }
+
+    function endResize(e: React.PointerEvent<HTMLDivElement>) {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      dragRef.current = null;
+    }
+
+    return (
+      <div className="editTextareaWrap">
+        <textarea
+          className="commentInput"
+          ref={ref}
+          placeholder="Optional comment..."
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          rows={2}
+        />
+        {!disabled && (
+          <div
+            className="editTextareaResizeHandle"
+            onPointerDown={beginResize}
+            onPointerMove={onResizeMove}
+            onPointerUp={endResize}
+            onPointerCancel={endResize}
+          />
+        )}
+      </div>
+    );
+  }
+
+  function showErrorToast(message: string) {
+    setToast({ message });
+  }
+
+  function startTextareaResize(e: React.PointerEvent<HTMLDivElement>) {
+    if (isLoading) return;
+    const el = inputTextareaRef.current;
+    if (!el) return;
+
+    e.preventDefault();
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+
+    const startY = e.clientY;
+    const startHeight = el.getBoundingClientRect().height;
+
+    function onMove(ev: PointerEvent) {
+      const dy = ev.clientY - startY;
+      const next = Math.max(60, Math.min(260, Math.round(startHeight - dy)));
+      setInputHeight(next);
+    }
+
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      bottomAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }
+
+  useEffect(() => {
+    fetchJiraData();
+  }, []);
+
+  useEffect(() => {
+    const el = inputTextareaRef.current;
+    if (!el) return;
+
+    if (!input.trim()) {
+      setInputHeight(DEFAULT_INPUT_HEIGHT);
+      return;
+    }
+
+    const needed = el.scrollHeight;
+    setInputHeight((prev) => {
+      const next = Math.max(prev, needed);
+      const clamped = Math.max(60, Math.min(260, next));
+      return clamped === prev ? prev : clamped;
+    });
+  }, [input]);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      const data: any = event?.data;
+      if (!data || data.type !== "BUGGENAI_BUG_PROMPT") return;
+
+      const prompt = typeof data.prompt === "string" ? data.prompt : "";
+      if (!prompt.trim()) return;
+
+      setPromptJiraHints(parsePromptJiraHints(prompt));
+
+      setActiveTab("ai");
+      setInput(prompt);
+
+      window.setTimeout(() => {
+        const el = inputTextareaRef.current;
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (!el.disabled) el.focus();
+      }, 0);
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  useEffect(() => {
+    if (suppressAutoScrollRef.current) {
+      suppressAutoScrollRef.current = false;
+      return;
+    }
+
+    if (chatMessages.length > 0 || isLoading) {
+      scrollToBottom();
+    }
+  }, [chatMessages.length, isLoading, streamingText]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      streamingAutoScrollRef.current = true;
+      return;
+    }
+
+    const el = streamingTextRef.current;
+    if (!el) return;
+    if (!streamingAutoScrollRef.current) return;
+
+    el.scrollTop = el.scrollHeight;
+  }, [streamingText, isLoading]);
+
+  function normalizeName(s: string) {
+    return String(s || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  function parsePromptJiraHints(prompt: string): PromptJiraHints {
+    const text = String(prompt || "");
+
+    const lineValue = (re: RegExp) => {
+      const m = text.match(re);
+      return m && m[1] ? String(m[1]).trim() : "";
+    };
+
+    const componentsRaw = lineValue(/^\s*-\s*Components\s*:\s*(.+)\s*$/mi);
+    const parentKey = lineValue(/^\s*-\s*Parent\s*Key\s*:\s*(SE2-\d+)\s*$/mi);
+    const sprintName = lineValue(/^\s*-\s*Current\s*Sprint\s*:\s*(.+)\s*$/mi);
+    const testCaseId = lineValue(/^\s*-\s*Test\s*Case\s*ID\s*:\s*(SE2-\d+)\s*$/mi);
+
+    const components = componentsRaw
+      ? componentsRaw
+          .split(",")
+          .map((s) => String(s || "").trim())
+          .filter(Boolean)
+      : [];
+
+    return { components, parentKey, sprintName, testCaseId };
+  }
+
+  function getRoutingText() {
+    const parts: string[] = [];
+    if (submittedQuestion) parts.push(submittedQuestion);
+    if (report?.title) parts.push(report.title);
+    if (report?.description) parts.push(report.description);
+    if (report?.component) parts.push(report.component);
+    return normalizeName(parts.join("\n"));
+  }
+
+  function applyAutoRouting() {
+    if (!report) return;
+    if (jiraUsers.length === 0 || jiraComponents.length === 0) return;
+
+    const text = getRoutingText();
+
+    // Do not override if user already chose values
+    const canSetAssignee = !selectedAssignee && !isAssigneeEditing && !assigneeSearch.trim();
+    const canSetComponents = selectedComponents.length === 0;
+    const canSetParent = !selectedParent.trim();
+    const canSetRelatedTo = selectedRelatedToKeys.length === 0;
+    const canSetSprint = !selectedSprint.trim();
+
+    let promptSetComponents = false;
+    let promptSetParent = false;
+    let promptSetRelatedTo = false;
+    let promptSetSprint = false;
+
+    if (canSetComponents && promptJiraHints.components.length > 0) {
+      const comps = promptJiraHints.components
+        .map((name) => jiraComponents.find((c) => normalizeName(c.name) === normalizeName(name)))
+        .filter(Boolean)
+        .map((c: any) => ({ id: c.id, name: c.name }));
+
+      if (comps.length > 0) {
+        setSelectedComponents(comps);
+        setComponentSearch("");
+        setShowComponentList(false);
+        promptSetComponents = true;
+      }
+    }
+
+    if (canSetParent && promptJiraHints.parentKey) {
+      setSelectedParent(promptJiraHints.parentKey);
+      setParentSearch(promptJiraHints.parentKey);
+      setShowParentList(false);
+      promptSetParent = true;
+    }
+
+    if (canSetSprint && promptJiraHints.sprintName && jiraSprints.length > 0) {
+      const target = normalizeName(promptJiraHints.sprintName);
+      const sprint =
+        jiraSprints.find((s) => normalizeName(s.name) === target) ||
+        jiraSprints.find((s) => normalizeName(s.name).includes(target));
+      if (sprint?.id) {
+        setSelectedSprint(String(sprint.id));
+        promptSetSprint = true;
+      }
+    }
+
+    if (canSetRelatedTo) {
+      const nextKeys = [promptJiraHints.testCaseId, promptJiraHints.parentKey].filter(Boolean) as string[];
+      if (nextKeys.length > 0) {
+        const deduped = Array.from(new Set(nextKeys));
+        setSelectedRelatedToKeys(deduped);
+        setRelatedToSearch("");
+        setShowRelatedToList(false);
+        promptSetRelatedTo = true;
+      }
+    }
+
+    const containsAny = (keywords: string[]) => (text ? keywords.some((k) => text.includes(normalizeName(k))) : false);
+
+    let assigneeName: string | null = null;
+    let componentNames: string[] = [];
+
+    // Priority order to avoid overlaps
+    if (containsAny(["BOM", "ACL", "AML"])) {
+      assigneeName = "Ahmad Esmat";
+      componentNames = ["BOM Manager", "ACL Management", "AML Management"];
+    } else if (containsAny(["supplychain", "supply chain"])) {
+      assigneeName = "Ahmed Ghanem";
+      componentNames = ["Supply Chain"];
+    } else if (containsAny(["Alert", "Admin"])) {
+      assigneeName = "Awad Ayoub";
+      componentNames = ["Admin", "Alert"];
+    } else if (containsAny(["supplier"])) {
+      assigneeName = "Yasser Hosny";
+      componentNames = ["Supplier"];
+    }
+
+    if (assigneeName && canSetAssignee) {
+      const target = normalizeName(assigneeName);
+
+      // Try strict match first, then looser contains match (to handle middle names, initials, etc.)
+      const user =
+        jiraUsers.find((u) => normalizeName(u.displayName) === target) ||
+        jiraUsers.find((u) => normalizeName(u.displayName).includes(target));
+
+      if (user?.accountId) {
+        setSelectedAssignee(user.accountId);
+        setSelectedAssigneeLabel(user.displayName || "");
+        setAssigneeSearch("");
+        setShowAssigneeList(false);
+        lastRoutingUserSearchRef.current = null;
+      } else {
+        // If the user isn't in the current list, trigger a Jira user search for the name.
+        // This keeps token usage at 0 (no AI involvement) and is resilient to limited default user lists.
+        if (lastRoutingUserSearchRef.current !== assigneeName) {
+          lastRoutingUserSearchRef.current = assigneeName;
+          searchAssignees(assigneeName);
+        }
+      }
+    }
+
+    if (componentNames.length > 0 && canSetComponents && !promptSetComponents) {
+      const comps = componentNames
+        .map((name) => jiraComponents.find((c) => normalizeName(c.name) === normalizeName(name)))
+        .filter(Boolean)
+        .map((c: any) => ({ id: c.id, name: c.name }));
+
+      if (comps.length > 0) {
+        setSelectedComponents(comps);
+        setComponentSearch("");
+        setShowComponentList(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    applyAutoRouting();
+    // Intentionally include lists + selections so routing can apply once Jira data arrives
+  }, [report, submittedQuestion, jiraUsers, jiraComponents, jiraSprints, promptJiraHints]);
+
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      const root = jiraSectionRef.current;
+      if (!root) return;
+      if (root.contains(e.target as Node)) return;
+
+      setShowComponentList(false);
+      setShowParentList(false);
+      setShowRelatedToList(false);
+      setShowSprintList(false);
+      setShowAssigneeList(false);
+    }
+
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, []);
+
+  async function fetchJiraData() {
+    try {
+      const [compRes, issuesRes, usersRes, sprintsRes, prioritiesRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/jira/components`),
+        fetch(`${API_BASE_URL}/jira/issues`),
+        fetch(`${API_BASE_URL}/jira/users`),
+        fetch(`${API_BASE_URL}/jira/sprints`),
+        fetch(`${API_BASE_URL}/jira/priorities`)
+      ]);
+      
+      if (compRes.ok) {
+        const compData = await compRes.json();
+        setJiraComponents(compData.components || []);
+      }
+      
+      if (issuesRes.ok) {
+        const issuesData = await issuesRes.json();
+        setJiraIssues(issuesData.issues || []);
+      }
+
+      if (usersRes.ok) {
+        const usersData = await usersRes.json();
+        setJiraUsers(usersData.users || []);
+      }
+
+      if (sprintsRes.ok) {
+        const sprintsData = await sprintsRes.json();
+        setJiraSprints(sprintsData.sprints || []);
+      }
+
+      if (prioritiesRes.ok) {
+        const prioritiesData = await prioritiesRes.json();
+        setJiraPriorities(prioritiesData.priorities || []);
+      }
+    } catch (e) {
+      console.log("Jira not configured or unavailable");
+    }
+  }
+
+  async function searchAssignees(query: string) {
+    if (!query || query.length < 2) {
+      const res = await fetch(`${API_BASE_URL}/jira/users`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraUsers(data.users || []);
+      }
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/users?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraUsers(data.users || []);
+      }
+    } catch (e) {
+      console.log("Failed to search assignees");
+    }
+  }
+
+  async function searchComponents(query: string) {
+    if (!query || query.length < 2) {
+      const res = await fetch(`${API_BASE_URL}/jira/components`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraComponents(data.components || []);
+      }
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/components?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraComponents(data.components || []);
+      }
+    } catch (e) {
+      console.log("Failed to search components");
+    }
+  }
+
+  function handleComponentSearchChange(value: string) {
+    setComponentSearch(value);
+    searchComponents(value);
+  }
+
+  function handleAssigneeSearchChange(value: string) {
+    if (selectedAssignee && value.trim().length > 0) {
+      setSelectedAssignee("");
+      setSelectedAssigneeLabel("");
+    }
+    setAssigneeSearch(value);
+    searchAssignees(value);
+  }
+
+  function handleSelectComponent(value: string) {
+    if (!value) return;
+    const comp = jiraComponents.find(c => c.id === value);
+    if (comp && !selectedComponents.find(c => c.id === value)) {
+      setSelectedComponents([...selectedComponents, comp]);
+    }
+    setComponentSearch("");
+    setShowComponentList(false);
+  }
+
+  function removeSelectedComponent(id: string) {
+    setSelectedComponents(selectedComponents.filter(c => c.id !== id));
+  }
+
+  function handleSelectAssignee(value: string) {
+    if (!value) {
+      setShowAssigneeList(false);
+      return;
+    }
+    setSelectedAssignee(value);
+    const user = jiraUsers.find((u) => u.accountId === value);
+    setSelectedAssigneeLabel(user?.displayName || "");
+    setAssigneeSearch("");
+    setShowAssigneeList(false);
+    setIsAssigneeEditing(false);
+  }
+
+  function removeSelectedAssignee() {
+    setSelectedAssignee("");
+    setSelectedAssigneeLabel("");
+    setAssigneeSearch("");
+    setIsAssigneeEditing(false);
+  }
+
+  function handleSelectParent(value: string) {
+    if (!value) {
+      setSelectedParent("");
+      return;
+    }
+    setSelectedParent(value);
+    setParentSearch(value);
+    setShowParentList(false);
+  }
+
+  function removeSelectedParent() {
+    setSelectedParent("");
+    setParentSearch("");
+  }
+
+  function removeSelectedRelatedTo(key: string) {
+    setSelectedRelatedToKeys((prev) => prev.filter((k) => k !== key));
+  }
+
+  function handleComponentSearchFocus() {
+    setShowComponentList(true);
+    searchComponents(componentSearch);
+  }
+
+  function handleAssigneeSearchFocus() {
+    assigneePrevRef.current = { id: selectedAssignee, label: selectedAssigneeLabel };
+    setIsAssigneeEditing(true);
+    setAssigneeSearch("");
+    setShowAssigneeList(true);
+  }
+
+  function handleAssigneeSearchBlur() {
+    window.setTimeout(() => {
+      const wrap = assigneeWrapRef.current;
+      const active = document.activeElement;
+      if (wrap && active && wrap.contains(active)) return;
+
+      setIsAssigneeEditing(false);
+      setShowAssigneeList(false);
+
+      const noNewSelection = !selectedAssignee;
+      const emptyText = !assigneeSearch.trim();
+      if (noNewSelection && emptyText) {
+        const prev = assigneePrevRef.current;
+        if (prev?.id) {
+          setSelectedAssignee(prev.id);
+          setSelectedAssigneeLabel(prev.label);
+        }
+      }
+    }, 0);
+  }
+
+  function handleParentSearchFocus() {
+    setShowParentList(true);
+    searchParentIssues(parentSearch);
+  }
+
+  function handleSprintSearchFocus() {
+    setShowSprintList(true);
+    searchSprints(sprintSearch);
+  }
+
+  async function searchParentIssues(query: string) {
+    if (!query || query.length < 2) {
+      const res = await fetch(`${API_BASE_URL}/jira/issues`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraIssues(data.issues || []);
+      }
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/issues?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraIssues(data.issues || []);
+      }
+    } catch (e) {
+      console.log("Failed to search parent issues");
+    }
+  }
+
+  function handleParentSearchChange(value: string) {
+    setParentSearch(value);
+    searchParentIssues(value);
+  }
+
+  function handleRelatedToSearchFocus() {
+    setShowRelatedToList(true);
+    searchRelatedToIssues(relatedToSearch);
+  }
+
+  async function searchRelatedToIssues(query: string) {
+    if (!query || query.length < 2) {
+      const res = await fetch(`${API_BASE_URL}/jira/issues`);
+      if (res.ok) {
+        const data = await res.json();
+        setRelatedToIssues(data.issues || []);
+      }
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/issues?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRelatedToIssues(data.issues || []);
+      }
+    } catch (e) {
+      console.log("Failed to search related issues");
+    }
+  }
+
+  function handleRelatedToSearchChange(value: string) {
+    setRelatedToSearch(value);
+    searchRelatedToIssues(value);
+  }
+
+  function handleSelectRelatedTo(key: string) {
+    if (!key) return;
+    setSelectedRelatedToKeys((prev) => {
+      if (prev.includes(key)) return prev;
+      return [...prev, key];
+    });
+    setRelatedToSearch("");
+    setShowRelatedToList(false);
+  }
+
+  async function searchSprints(query: string) {
+    if (!query || query.length < 2) {
+      const res = await fetch(`${API_BASE_URL}/jira/sprints`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraSprints(data.sprints || []);
+      }
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/sprints?q=${encodeURIComponent(query)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJiraSprints(data.sprints || []);
+      }
+    } catch (e) {
+      console.log("Failed to search sprints");
+    }
+  }
+
+  function handleSprintSearchChange(value: string) {
+    setSprintSearch(value);
+    searchSprints(value);
+  }
+
+  function handleSelectSprint(value: string) {
+    if (!value) {
+      setSelectedSprint("");
+      return;
+    }
+    setSelectedSprint(value);
+    const sprint = jiraSprints.find((s) => String(s.id) === String(value));
+    setSprintSearch(sprint?.name ? String(sprint.name) : String(value));
+    setShowSprintList(false);
+  }
+
+  function removeSelectedSprint() {
+    setSelectedSprint("");
+    setSprintSearch("");
+  }
+
+  function addFiles(newFiles: FileList | File[]) {
+    const validFiles: File[] = [];
+    for (const f of Array.from(newFiles)) {
+      if (!f.type.startsWith("image/") && !f.type.startsWith("video/")) {
+        setError("Only image and video files are supported.");
+        continue;
+      }
+      validFiles.push(f);
+    }
+    if (validFiles.length === 0) return;
+    
+    setError(null);
+    setFiles((prev) => [...prev, ...validFiles]);
+    
+    validFiles.forEach((f) => {
+      if (f.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setImagePreviews((prev) => [...prev, e.target?.result as string]);
+        };
+        reader.readAsDataURL(f);
+      } else if (f.type.startsWith("video/")) {
+        setImagePreviews((prev) => [...prev, `video:${f.name}`]);
+      }
+    });
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function clearFiles() {
+    setFiles([]);
+    setImagePreviews([]);
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items?.length) return;
+    const pastedFiles: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type?.startsWith("image/")) {
+        const pasted = item.getAsFile();
+        if (!pasted) continue;
+        const ext = pasted.type?.split("/")?.[1] || "png";
+        const normalized = new File([pasted], `pasted-image-${Date.now()}.${ext}`, { type: pasted.type });
+        pastedFiles.push(normalized);
+      }
+    }
+    if (pastedFiles.length > 0) {
+      addFiles(pastedFiles);
+    }
+  }
+
+  async function handleSubmit() {
+    if (input.trim().length < 3 || isLoading) return;
+
+    setError(null);
+    setToast(null);
+    setIsLoading(true);
+    setStreamingText("");
+    
+    if (files.length > 0) {
+      setSubmittedImagePreviews(imagePreviews);
+      setSubmittedFiles(files);
+    }
+
+    const currentFiles = files;
+    const description = input.trim();
+    setSubmittedQuestion(description);
+    setInput("");
+    clearFiles();
+    setJiraResult(null);
+
+    setChatMessages(prev => [...prev, { role: "user", content: description }]);
+
+    try {
+      const form = new FormData();
+      form.append("description", description);
+      currentFiles.forEach((f) => form.append("images", f));
+      
+      if (conversationHistory.length > 0) {
+        form.append("conversationHistory", JSON.stringify(conversationHistory));
+      }
+
+      const res = await fetch(`${API_BASE_URL}/generate-stream`, {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        if (res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new Error("SERVER_UNREACHABLE");
+        }
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData?.error || `Request failed (${res.status})`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error("Streaming not supported");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulatedText = "";
+      let finalReport: BugReport | null = null;
+      let lastUiUpdateAt = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            
+            if (data.type === "chunk" && data.content) {
+              accumulatedText += data.content;
+              const now = Date.now();
+              if (now - lastUiUpdateAt > 80) {
+                lastUiUpdateAt = now;
+                setStreamingText(accumulatedText);
+              }
+            } else if (data.type === "complete" && data.report) {
+              finalReport = data.report;
+            } else if (data.type === "error") {
+              throw new Error(data.error || "Stream error");
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes("JSON")) {
+              throw parseErr;
+            }
+          }
+        }
+      }
+
+      if (finalReport) {
+        setConversationHistory(prev => [
+          ...prev,
+          { role: "user", content: description },
+          { role: "assistant", content: JSON.stringify(finalReport) }
+        ]);
+        
+        setChatMessages(prev => [...prev, { role: "assistant", content: "", report: finalReport }]);
+        setReport(finalReport);
+        setStreamingText("");
+
+        if (!selectedJiraPriority && finalReport.jiraPriority) {
+          setSelectedJiraPriority(finalReport.jiraPriority);
+        }
+
+        suppressAutoScrollRef.current = true;
+        requestAnimationFrame(() => {
+          const container = editableReportRef.current;
+          if (container) {
+            container.scrollIntoView({ behavior: "smooth", block: "start" });
+          } else {
+            reportTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+
+          window.setTimeout(() => {
+            if (editableTitleRef.current && !editableTitleRef.current.disabled) {
+              editableTitleRef.current.focus();
+            }
+          }, 0);
+        });
+      } else {
+        throw new Error("No report received from server");
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      const isFetchFailed =
+        e?.message === "Failed to fetch" ||
+        e?.name === "TypeError" ||
+        e?.message === "SERVER_UNREACHABLE" ||
+        msg.toLowerCase().includes("fetch failed");
+
+      if (isFetchFailed) {
+        showErrorToast(
+          "Unable to connect to AI. Please check the backend server/VPN and try again."
+        );
+      } else {
+        setError(e?.message || "Unexpected error");
+      }
+      setStreamingText("");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function startNewConversation() {
+    setReport(null);
+    setConversationHistory([]);
+    setChatMessages([]);
+    setSubmittedQuestion(null);
+    setSubmittedImagePreviews([]);
+    setSubmittedFiles([]);
+    setJiraResult(null);
+    setDeletedReportFields({});
+    setError(null);
+    setSelectedComponents([]);
+    setSelectedAssignee("");
+    setSelectedParent("");
+    setSelectedRelatedToKeys([]);
+    setSelectedSprint("");
+    setSelectedJiraPriority("");
+    setJiraComment("");
+    setComponentSearch("");
+    setAssigneeSearch("");
+    setRelatedToSearch("");
+    setParentSearch("");
+    setSprintSearch("");
+  }
+
+  async function handleUploadToJira() {
+    if (!report || jiraLoading) return;
+
+    setJiraLoading(true);
+    setError(null);
+
+    try {
+      const form = new FormData();
+      form.append("report", JSON.stringify(report));
+      if (selectedComponents.length > 0) {
+        selectedComponents.forEach(c => form.append("componentIds", c.id));
+      }
+      if (selectedParent) form.append("parentKey", selectedParent);
+      if (selectedRelatedToKeys.length > 0) {
+        selectedRelatedToKeys.forEach((k) => form.append("relatedToKeys", k));
+      }
+      if (selectedAssignee) form.append("assigneeId", selectedAssignee);
+      if (selectedSprint) form.append("sprintId", selectedSprint);
+      if (selectedJiraPriority) form.append("jiraPriority", selectedJiraPriority);
+      if (jiraComment.trim()) form.append("comment", jiraComment.trim());
+      submittedFiles.forEach((f) => form.append("images", f));
+
+      const res = await fetch(`${API_BASE_URL}/jira/create`, {
+        method: "POST",
+        body: form,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Failed to create JIRA Bug`);
+      }
+
+      setJiraResult({ url: data.jiraUrl, key: data.issueKey });
+    } catch (e: any) {
+      if (e?.message === "Failed to fetch" || e?.name === "TypeError") {
+        setError("Unable to connect to the server. Please check your VPN connection or contact the administrator if the problem persists.");
+      } else {
+        setError(e?.message || "Failed to upload to Jira");
+      }
+    } finally {
+      setJiraLoading(false);
+    }
+  }
+
+  function updateReport(field: keyof BugReport, value: string | string[]) {
+    setReport((prev) => {
+      if (!prev) return prev;
+
+      if (Array.isArray(value)) {
+        return { ...prev, [field]: value };
+      }
+
+      const normalized = String(value ?? "");
+      return { ...prev, [field]: normalized };
+    });
+  }
+
+  function updateStep(idx: number, value: string) {
+    if (!report) return;
+    const newSteps = [...report.stepsToReproduce];
+    newSteps[idx] = value;
+    setReport({ ...report, stepsToReproduce: newSteps });
+  }
+
+  function addStep() {
+    if (!report) return;
+    setReport({ ...report, stepsToReproduce: [...report.stepsToReproduce, ""] });
+  }
+
+  function removeStep(idx: number) {
+    if (!report) return;
+    const newSteps = report.stepsToReproduce.filter((_, i) => i !== idx);
+    setReport({ ...report, stepsToReproduce: newSteps });
+  }
+
+  function renderReport(r: BugReport, isEditable: boolean = false) {
+    if (isEditable) {
+      const canShowDescription = !deletedReportFields.description;
+      const canShowEnvironment = !deletedReportFields.environment;
+      const canShowReproducibility = !deletedReportFields.reproducibility;
+      const canShowImpact = !deletedReportFields.impact;
+      const canShowWorkaround = !deletedReportFields.workaround;
+
+      const deletedButtons = [
+        !canShowDescription ? { key: "description", label: "Description" } : null,
+        !canShowEnvironment ? { key: "environment", label: "Environment" } : null,
+        !canShowReproducibility ? { key: "reproducibility", label: "Reproducibility" } : null,
+        !canShowImpact ? { key: "impact", label: "Impact" } : null,
+        !canShowWorkaround ? { key: "workaround", label: "Workaround" } : null
+      ].filter(Boolean) as Array<{ key: string; label: string }>;
+
+      return (
+        <div className="reportContent editable" ref={editableReportRef}>
+          <div className="editableField">
+            <label>Title</label>
+            <input
+              type="text"
+              className="editInput"
+              ref={editableTitleRef}
+              value={r.title}
+              onChange={(e) => updateReport("title", e.target.value)}
+            />
+          </div>
+
+          {deletedButtons.length > 0 && (
+            <div className="editableField">
+              {deletedButtons.map((b) => (
+                <button
+                  key={b.key}
+                  type="button"
+                  className="addStepBtn"
+                  onClick={() =>
+                    setDeletedReportFields((prev) => ({
+                      ...prev,
+                      [b.key]: false
+                    }))
+                  }
+                >
+                  + Add {b.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {canShowDescription && (
+            <div className="editableField">
+              <div className="editableLabelRow">
+                <label>Description</label>
+                <button
+                  type="button"
+                  className="clearFieldBtn"
+                  onClick={() => {
+                    updateReport("description", "");
+                    setDeletedReportFields((prev) => ({ ...prev, description: true }));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <AutoResizeEditTextarea value={r.description || ""} onChange={(v) => updateReport("description", v)} rows={2} />
+            </div>
+          )}
+
+          <div className="editableField">
+            <label>Steps to Reproduce</label>
+            {r.stepsToReproduce?.map((s: string, idx: number) => (
+              <div key={idx} className="stepRow">
+                <span className="stepNumber">{idx + 1}.</span>
+                <input
+                  type="text"
+                  className="editInput stepInput"
+                  value={s}
+                  onChange={(e) => updateStep(idx, e.target.value)}
+                />
+                <button type="button" className="removeStepBtn" onClick={() => removeStep(idx)}>✕</button>
+              </div>
+            ))}
+            <button type="button" className="addStepBtn" onClick={addStep}>+ Add Step</button>
+          </div>
+
+          <div className="editableField">
+            <label>Expected Result</label>
+            <AutoResizeEditTextarea value={r.expectedResult || ""} onChange={(v) => updateReport("expectedResult", v)} rows={2} />
+          </div>
+
+          <div className="editableField">
+            <label>Actual Result</label>
+            <AutoResizeEditTextarea value={r.actualResult || ""} onChange={(v) => updateReport("actualResult", v)} rows={2} />
+          </div>
+
+          {canShowEnvironment && (
+            <div className="editableField">
+              <div className="editableLabelRow">
+                <label>Environment</label>
+                <button
+                  type="button"
+                  className="clearFieldBtn"
+                  onClick={() => {
+                    updateReport("environment", "");
+                    setDeletedReportFields((prev) => ({ ...prev, environment: true }));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <input
+                type="text"
+                className="editInput"
+                value={r.environment || ""}
+                onChange={(e) => updateReport("environment", e.target.value)}
+              />
+            </div>
+          )}
+
+          {canShowReproducibility && (
+            <div className="editableField">
+              <div className="editableLabelRow">
+                <label>Reproducibility</label>
+                <button
+                  type="button"
+                  className="clearFieldBtn"
+                  onClick={() => {
+                    updateReport("reproducibility", "");
+                    setDeletedReportFields((prev) => ({ ...prev, reproducibility: true }));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <select
+                className="editSelect"
+                value={r.reproducibility || ""}
+                onChange={(e) => updateReport("reproducibility", e.target.value)}
+              >
+                <option value="">-- Select --</option>
+                <option value="Always">Always</option>
+                <option value="Sometimes">Sometimes</option>
+                <option value="Rarely">Rarely</option>
+              </select>
+            </div>
+          )}
+
+          {canShowImpact && (
+            <div className="editableField">
+              <div className="editableLabelRow">
+                <label>Impact</label>
+                <button
+                  type="button"
+                  className="clearFieldBtn"
+                  onClick={() => {
+                    updateReport("impact", "");
+                    setDeletedReportFields((prev) => ({ ...prev, impact: true }));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <AutoResizeEditTextarea value={r.impact || ""} onChange={(v) => updateReport("impact", v)} rows={2} />
+            </div>
+          )}
+
+          {canShowWorkaround && (
+            <div className="editableField">
+              <div className="editableLabelRow">
+                <label>Workaround</label>
+                <button
+                  type="button"
+                  className="clearFieldBtn"
+                  onClick={() => {
+                    updateReport("workaround", "");
+                    setDeletedReportFields((prev) => ({ ...prev, workaround: true }));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <AutoResizeEditTextarea value={r.workaround || ""} onChange={(v) => updateReport("workaround", v)} rows={2} />
+            </div>
+          )}
+
+          {submittedImagePreviews.length > 0 && (
+            <div className="reportSection">
+              <div className="reportSectionTitle">Attachments ({submittedImagePreviews.length})</div>
+              <div className="attachedImages">
+                {submittedImagePreviews.map((src, idx) => (
+                  src.startsWith("video:") ? (
+                    <div key={idx} className="attachedVideo">
+                      <span className="videoIcon">🎬</span>
+                      <span>{src.replace("video:", "")}</span>
+                    </div>
+                  ) : (
+                    <img key={idx} src={src} alt={`Screenshot ${idx + 1}`} className="attachedImage" />
+                  )
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="reportContent">
+        <div className="reportTitle">{r.title}</div>
+
+        {r.description && (
+          <div className="reportDescription">{r.description}</div>
+        )}
+
+        <div className="reportSection">
+          <div className="reportSectionTitle">Steps to Reproduce</div>
+          <div className="reportSectionContent">
+            {r.stepsToReproduce?.length ? (
+              <ol className="steps">
+                {r.stepsToReproduce.map((s: string, idx: number) => (
+                  <li key={idx}>{s}</li>
+                ))}
+              </ol>
+            ) : (
+              "—"
+            )}
+          </div>
+        </div>
+
+        <div className="reportSection">
+          <div className="reportSectionTitle">Expected Result</div>
+          <div className="reportSectionContent">{r.expectedResult || "—"}</div>
+        </div>
+
+        <div className="reportSection">
+          <div className="reportSectionTitle">Actual Result</div>
+          <div className="reportSectionContent">{r.actualResult || "—"}</div>
+        </div>
+
+        <div className="reportSection">
+          <div className="reportSectionTitle">Environment</div>
+          <div className="reportSectionContent">{r.environment || "—"}</div>
+        </div>
+
+        {r.reproducibility && (
+          <div className="reportSection">
+            <div className="reportSectionTitle">Reproducibility</div>
+            <div className="reportSectionContent">{r.reproducibility}</div>
+          </div>
+        )}
+
+        {r.impact && (
+          <div className="reportSection">
+            <div className="reportSectionTitle">Impact</div>
+            <div className="reportSectionContent">{r.impact}</div>
+          </div>
+        )}
+
+        {r.workaround && (
+          <div className="reportSection">
+            <div className="reportSectionTitle">Workaround</div>
+            <div className="reportSectionContent">{r.workaround}</div>
+          </div>
+        )}
+
+        {submittedImagePreviews.length > 0 && (
+          <div className="reportSection">
+            <div className="reportSectionTitle">Attachments ({submittedImagePreviews.length})</div>
+            <div className="attachedImages">
+              {submittedImagePreviews.map((src, idx) => (
+                src.startsWith("video:") ? (
+                  <div key={idx} className="attachedVideo">
+                    <span className="videoIcon">🎬</span>
+                    <span>{src.replace("video:", "")}</span>
+                  </div>
+                ) : (
+                  <img key={idx} src={src} alt={`Screenshot ${idx + 1}`} className="attachedImage" />
+                )
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const lastAssistantReportIndex = (() => {
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i]?.role === "assistant" && chatMessages[i]?.report) return i;
+    }
+    return -1;
+  })();
+
+  return (
+    <div className="app">
+      {toast && (
+        <div className="toast toastError" role="status" aria-live="polite">
+          <div className="toastText">{toast.message}</div>
+          <button
+            type="button"
+            className="toastClose"
+            onClick={() => setToast(null)}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <div className="header">
+        <h1 className="headerBrand">
+          <svg className="headerBrandIcon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BugGenAI">
+            <path d="M12 2.5 L19 6.5 V17.5 L12 21.5 L5 17.5 V6.5 Z" fill="#2f6fed" />
+            <circle cx="12" cy="8" r="1.6" stroke="#0F172A" strokeWidth="1.8" fill="none" />
+            <ellipse cx="12" cy="13" rx="3" ry="4.2" stroke="#0F172A" strokeWidth="1.8" fill="none" />
+            <path d="M9 11 L7.5 10" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M9 13 L7.3 13" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M9 15 L7.5 16" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M15 11 L16.5 10" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M15 13 L16.7 13" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M15 15 L16.5 16" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M10.5 12 C11 11, 13 11, 13.5 12 C14 13, 13 14.5, 12 15 C11 14.5, 10 13, 10.5 12" stroke="#22D3EE" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="11.2" cy="12.3" r="0.7" fill="#22D3EE" />
+            <circle cx="12.8" cy="12.1" r="0.7" fill="#22D3EE" />
+            <circle cx="12" cy="14.2" r="0.7" fill="#22D3EE" />
+          </svg>
+          BugGenAI
+        </h1>
+        <div className="tabs" role="tablist" aria-label="Apps">
+          <button
+            type="button"
+            className={`tab ${activeTab === "zephyr" ? "active" : ""}`}
+            role="tab"
+            aria-selected={activeTab === "zephyr"}
+            onClick={() => setActiveTab("zephyr")}
+          >
+            Failed Test Cases
+          </button>
+          <button
+            type="button"
+            className={`tab ${activeTab === "ai" ? "active" : ""}`}
+            role="tab"
+            aria-selected={activeTab === "ai"}
+            onClick={() => setActiveTab("ai")}
+          >
+            Bug AI Generator
+          </button>
+        </div>
+        {activeTab === "ai" && report && (
+          <button className="newConversationButton" onClick={startNewConversation}>
+            + New Report
+          </button>
+        )}
+      </div>
+
+      <div className="mainArea">
+        <div className="zephyrFrameWrap" style={{ display: activeTab === "zephyr" ? "block" : "none" }}>
+          <ZephyrPanel />
+        </div>
+
+        <div className="resultArea" style={{ display: activeTab === "ai" ? "block" : "none" }}>
+          <div ref={reportTopRef} />
+          {chatMessages.map((msg, idx) => (
+            <div key={idx}>
+              {msg.role === "user" ? (
+                <div className="userQuestion">
+                  <div className="questionLabel">You:</div>
+                  <div className="questionText">{msg.content}</div>
+                </div>
+              ) : msg.report ? (
+                idx === lastAssistantReportIndex && report ? (
+                  <>
+                    {renderReport(report, true)}
+
+                    {!jiraResult && (
+                      <div className="jiraSection" ref={jiraSectionRef}>
+                        <div className="jiraSectionTitle">Upload to JIRA</div>
+
+                        <div className="jiraOptions">
+                          <div className="jiraOption">
+                            <label>Component *</label>
+                            <input
+                              type="text"
+                              className="searchInput"
+                              placeholder="Search components..."
+                              value={componentSearch}
+                              onChange={(e) => handleComponentSearchChange(e.target.value)}
+                              onFocus={handleComponentSearchFocus}
+                              disabled={jiraLoading}
+                            />
+                            {selectedComponents.length > 0 && (
+                              <div className="selectedItems">
+                                {selectedComponents.map((c) => (
+                                  <div key={c.id} className="selectedItem">
+                                    <span>{c.name}</span>
+                                    <button type="button" className="removeItem" onClick={() => removeSelectedComponent(c.id)}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {showComponentList && (
+                              <select
+                                value=""
+                                onChange={(e) => handleSelectComponent(e.target.value)}
+                                disabled={jiraLoading}
+                                size={5}
+                                className="searchableSelect"
+                              >
+                                <option value="">-- Select Component --</option>
+                                {jiraComponents.map((c) => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+
+                          <div className="jiraOption" ref={assigneeWrapRef}>
+                            <label>Assignee *</label>
+                            <input
+                              type="text"
+                              className="searchInput"
+                              placeholder="Search users..."
+                              value={isAssigneeEditing ? assigneeSearch : (selectedAssigneeLabel || assigneeSearch)}
+                              onChange={(e) => handleAssigneeSearchChange(e.target.value)}
+                              onFocus={handleAssigneeSearchFocus}
+                              onBlur={handleAssigneeSearchBlur}
+                              disabled={jiraLoading}
+                            />
+                            {showAssigneeList && (
+                              <select
+                                value={selectedAssignee}
+                                onChange={(e) => handleSelectAssignee(e.target.value)}
+                                disabled={jiraLoading}
+                                size={5}
+                                className="searchableSelect"
+                              >
+                                <option value="">-- Select Assignee --</option>
+                                {jiraUsers.map((u) => (
+                                  <option key={u.accountId} value={u.accountId}>{u.displayName}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+
+                          <div className="jiraOption">
+                            <label>Parent Issue</label>
+                            <input
+                              type="text"
+                              className="searchInput"
+                              placeholder="Search parent issue..."
+                              value={parentSearch}
+                              onChange={(e) => handleParentSearchChange(e.target.value)}
+                              onFocus={handleParentSearchFocus}
+                              disabled={jiraLoading}
+                            />
+                            {showParentList && (
+                              <select
+                                value={selectedParent}
+                                onChange={(e) => handleSelectParent(e.target.value)}
+                                disabled={jiraLoading}
+                                size={5}
+                                className="searchableSelect"
+                              >
+                                <option value="">-- Select Parent --</option>
+                                {jiraIssues.map((i) => (
+                                  <option key={i.key} value={i.key}>{i.key} - {i.summary}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+
+                          <div className="jiraOption">
+                            <label>Related To</label>
+                            <input
+                              type="text"
+                              className="searchInput"
+                              placeholder="Search related issue..."
+                              value={relatedToSearch}
+                              onChange={(e) => handleRelatedToSearchChange(e.target.value)}
+                              onFocus={handleRelatedToSearchFocus}
+                              disabled={jiraLoading}
+                            />
+                            {selectedRelatedToKeys.length > 0 && (
+                              <div className="selectedItems">
+                                {selectedRelatedToKeys.map((k) => (
+                                  <div key={k} className="selectedItem">
+                                    <span>{k}</span>
+                                    <button type="button" className="removeItem" onClick={() => removeSelectedRelatedTo(k)}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {showRelatedToList && (
+                              <select
+                                value=""
+                                onChange={(e) => handleSelectRelatedTo(e.target.value)}
+                                disabled={jiraLoading}
+                                size={5}
+                                className="searchableSelect"
+                              >
+                                <option value="">-- Select Related To --</option>
+                                {relatedToIssues.map((i) => (
+                                  <option key={i.key} value={i.key}>{i.key} - {i.summary}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+
+                          <div className="jiraOption">
+                            <label>Sprint</label>
+                            <input
+                              type="text"
+                              className="searchInput"
+                              placeholder="Search sprint..."
+                              value={sprintSearch}
+                              onChange={(e) => handleSprintSearchChange(e.target.value)}
+                              onFocus={handleSprintSearchFocus}
+                              disabled={jiraLoading}
+                            />
+                            {showSprintList && (
+                              <select
+                                value={selectedSprint}
+                                onChange={(e) => handleSelectSprint(e.target.value)}
+                                disabled={jiraLoading}
+                                size={5}
+                                className="searchableSelect"
+                              >
+                                <option value="">-- Select Sprint --</option>
+                                {jiraSprints.map((s) => (
+                                  <option key={String(s.id)} value={String(s.id)}>{s.name}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+
+                          <div className="jiraOption">
+                            <label>Priority</label>
+                            <select
+                              className="editSelect"
+                              value={selectedJiraPriority}
+                              onChange={(e) => setSelectedJiraPriority(e.target.value)}
+                              disabled={jiraLoading}
+                            >
+                              <option value="">-- Select Priority --</option>
+                              {jiraPriorities.map((p) => (
+                                <option key={p.id} value={p.name}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="jiraOption fullWidth">
+                            <label>Comment</label>
+                            <AutoResizeCommentTextarea value={jiraComment} onChange={setJiraComment} disabled={jiraLoading} />
+                          </div>
+                        </div>
+
+                        <button
+                          className="jiraButton"
+                          onClick={handleUploadToJira}
+                          disabled={jiraLoading || selectedComponents.length === 0 || !selectedAssignee || !selectedJiraPriority}
+                        >
+                          {jiraLoading ? "Creating..." : "Create JIRA Bug"}
+                        </button>
+                      </div>
+                    )}
+
+                    {jiraResult && (
+                      <div className="jiraSuccess">
+                        <div className="jiraSuccessTitle">✓ JIRA Bug Created</div>
+                        <a href={jiraResult.url} target="_blank" rel="noreferrer">
+                          {jiraResult.key} - Open in Jira
+                        </a>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  renderReport(msg.report, false)
+                )
+              ) : null}
+            </div>
+          ))}
+          {isLoading && (
+            <div className="loadingState">
+              {streamingText ? (
+                <div className="streamingContent">
+                  <div className="streamingHeader">
+                    <span className="typingDots">
+                      <span></span><span></span><span></span>
+                    </span>
+                    <span>Generating bug report...</span>
+                  </div>
+                  <div
+                    className="streamingText"
+                    ref={streamingTextRef}
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      const threshold = 24;
+                      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+                      streamingAutoScrollRef.current = atBottom;
+                    }}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="loadingSpinner"></div>
+                  <div className="loadingText">Connecting to AI...</div>
+                </>
+              )}
+            </div>
+          )}
+          <div ref={bottomAnchorRef} />
+        </div>
+
+        {error && <div className="error">{error}</div>}
+      </div>
+
+      {activeTab === "ai" && (
+        <div className="inputArea">
+          {imagePreviews.length > 0 && (
+            <div className="imagePreviewsContainer">
+              {imagePreviews.map((src, idx) => (
+                <div key={idx} className="imagePreviewItem">
+                  {src.startsWith("video:") ? (
+                    <div className="videoPreviewThumb">
+                      <span className="videoIcon">🎬</span>
+                      <span className="videoName">{src.replace("video:", "")}</span>
+                    </div>
+                  ) : (
+                    <img src={src} alt={`Preview ${idx + 1}`} className="imagePreviewThumb" />
+                  )}
+                  <button
+                    type="button"
+                    className="imagePreviewRemove"
+                    onClick={() => removeFile(idx)}
+                    disabled={isLoading}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="inputWrapper">
+            <div className="textareaResizeHandle" onPointerDown={startTextareaResize} />
+            <textarea
+              className="textarea"
+              placeholder="Describe the bug..."
+              ref={inputTextareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onPaste={handlePaste}
+              style={{ height: `${inputHeight}px` }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isLoading) handleSubmit();
+                }
+              }}
+              disabled={isLoading}
+            />
+            <div className="inputActions">
+              <button
+                type="button"
+                className={`attachButton ${files.length > 0 ? "hasFile" : ""}`}
+                disabled={isLoading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                📎 Attach
+              </button>
+              <button
+                type="button"
+                className="sendButton"
+                onClick={handleSubmit}
+                disabled={isLoading || input.trim().length < 3}
+              >
+                {isLoading ? "..." : "➤"}
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <div className="hint">Press Enter to send · Shift+Enter for new line · Ctrl+V to paste image</div>
+        </div>
+      )}
+
+      <footer className="globalFooter">
+        <span className="footerBrand">
+          <span>BugGenAI – Powered by</span>
+          <svg className="footerLogo" width="158" height="42" viewBox="0 0 158 42" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+            <rect width="158" height="42" fill="none" />
+            <g clipPath="url(#clip0_1_42)">
+              <path d="M39.6887 17.0262C39.0735 16.2436 38.4348 15.8859 36.8636 15.8859C35.5196 15.8859 34.6536 16.3994 34.6536 17.3839C34.6536 18.6588 35.7939 19.0395 37.2965 19.151C39.4379 19.3068 41.3971 19.9106 41.3971 22.4834C41.3971 24.4294 40.0531 25.7697 37.1143 25.7697C34.7908 25.7697 33.582 25.0774 32.718 23.9141L34.062 22.9757C34.6771 23.7795 35.498 24.116 37.1378 24.116C38.664 24.116 39.575 23.5333 39.575 22.5277C39.575 21.3201 38.8462 20.8951 36.6363 20.7374C34.7222 20.6028 32.8316 19.8433 32.8316 17.405C32.8316 15.5494 34.1991 14.2284 36.9106 14.2284C38.7561 14.2284 40.1687 14.6976 41.0581 16.084L39.6906 17.0243L39.6887 17.0262Z" fill="white" />
+              <path d="M43.558 10.1614H45.6093V12.1747H43.558V10.1614ZM43.6717 14.4091H45.4956V25.5909H43.6717V14.4091Z" fill="white" />
+              <path d="M48.2287 10.1614H50.0527V21.7008C50.0527 22.9084 50.1212 23.9372 51.9883 23.9372V25.5909C49.1181 25.5909 48.2287 24.4736 48.2287 22.1469V10.1614Z" fill="white" />
+              <path d="M54.1277 10.1614H56.179V12.1747H54.1277V10.1614ZM54.2414 14.4091H56.0634V25.5909H54.2414V14.4091Z" fill="white" />
+              <path d="M67.0915 23.891C66.3843 25.1871 64.9952 25.7678 63.1497 25.7678C60.0287 25.7678 58.2283 23.8006 58.2283 20.7144V19.2376C58.2283 16.0628 60.0738 14.2284 63.1497 14.2284C64.8581 14.2284 66.2706 14.8322 67.0915 15.9725L65.6555 16.9551C65.1539 16.2398 64.1978 15.8379 63.1497 15.8379C61.1905 15.8379 60.0503 17.1339 60.0503 19.2376V20.7144C60.0503 22.6373 60.9613 24.1583 63.1497 24.1583C64.2213 24.1583 65.2009 23.8006 65.679 22.9046L67.0915 23.8891V23.891Z" fill="white" />
+              <path d="M77.2498 20.7163C77.2498 23.6237 75.7922 25.7697 72.5106 25.7697C69.4797 25.7697 67.7713 23.8026 67.7713 20.7163V19.2395C67.7713 16.0648 69.5248 14.2303 72.5106 14.2303C75.4963 14.2303 77.2498 16.0417 77.2498 19.2395V20.7163ZM75.4278 20.7163V19.2395C75.4278 17.1147 74.3796 15.8398 72.5106 15.8398C70.6415 15.8398 69.5934 17.1358 69.5934 19.2395V20.7163C69.5934 22.6392 70.4123 24.1602 72.5106 24.1602C74.4462 24.1602 75.4278 22.618 75.4278 20.7163Z" fill="white" />
+              <path d="M79.0699 14.4091H80.8919V15.5052C81.462 14.6553 82.2594 14.2303 83.9443 14.2303C86.3815 14.2303 88.0918 15.4841 88.0918 18.6145V25.5909H86.2698V18.6357C86.2698 16.3782 85.0159 15.8859 83.6719 15.8859C81.9635 15.8859 80.8919 17.0705 80.8919 18.6145V25.5909H79.0699V14.4091Z" fill="white" />
+              <path d="M98.9809 23.891C98.1835 25.2543 96.861 25.7908 94.8117 25.7908C91.395 25.7908 89.7532 23.6218 89.7532 20.7374V19.2164C89.7532 15.8398 91.4851 14.2072 94.4473 14.2072C97.6604 14.2072 99.1415 16.0417 99.1415 19.4395V20.7144H92.6488C92.6723 22.2565 93.1739 23.3757 94.7902 23.3757C95.997 23.3757 96.385 23.018 96.8179 22.4142L98.9828 23.891H98.9809ZM92.6469 18.6799H96.2243C96.1557 17.2262 95.5641 16.6224 94.4709 16.6224C93.3091 16.6224 92.7625 17.405 92.6469 18.6799Z" fill="white" />
+              <path d="M106.704 25.5909L104.494 22.1912L102.284 25.5909H99.071L102.807 19.8664L99.3668 14.4091H102.58L104.494 17.6069L106.408 14.4091H109.621L106.181 19.8664L109.94 25.5909H106.704Z" fill="white" />
+              <path d="M120.532 20.7374C120.532 23.6449 119.027 25.7908 116.088 25.7908C114.903 25.7908 114.106 25.5678 113.583 25.1428V29.8386H110.665V14.4091H113.583V15.1475C114.129 14.5437 114.95 14.2092 116.112 14.2092C118.755 14.2092 120.532 16.0205 120.532 19.2183V20.7394V20.7374ZM117.614 20.5586V19.3952C117.614 17.6069 117.044 16.6224 115.608 16.6224C114.172 16.6224 113.581 17.5166 113.581 19.1491V20.5586C113.581 22.1681 113.968 23.3757 115.608 23.3757C117.248 23.3757 117.614 22.1681 117.614 20.5586Z" fill="white" />
+              <path d="M130.69 23.891C129.893 25.2543 128.57 25.7908 126.521 25.7908C123.104 25.7908 121.462 23.6218 121.462 20.7374V19.2164C121.462 15.8398 123.194 14.2072 126.156 14.2072C129.369 14.2072 130.851 16.0417 130.851 19.4395V20.7144H124.358C124.381 22.2565 124.881 23.3757 126.499 23.3757C127.706 23.3757 128.094 23.018 128.527 22.4142L130.692 23.891H130.69ZM124.356 18.6799H127.933C127.865 17.2262 127.273 16.6224 126.18 16.6224C125.018 16.6224 124.472 17.405 124.358 18.6799H124.356Z" fill="white" />
+              <path d="M138.548 17.5185C138.252 17.0935 137.843 16.6686 137.112 16.6686C136.019 16.6686 135.29 17.4512 135.29 19.0164V25.5909H132.373V14.4091H135.221V15.3494C135.609 14.7899 136.362 14.2092 137.704 14.2092C139.046 14.2092 140.096 14.7899 140.78 15.9532L138.546 17.5185H138.548Z" fill="white" />
+              <path d="M141.328 14.4091H141.332V10.8845H144.226V14.4091H147.002V16.8243H144.226V21.497C144.226 22.6161 144.996 23.0853 146.067 23.0853H147.002V25.5909H145.772C143.015 25.5909 141.332 24.8313 141.332 21.9469V16.8262H141.328V14.4111V14.4091Z" fill="white" />
+              <path d="M17.2562 12.6864C17.2171 13.5113 16.5764 14.5035 15.8319 14.8919L8.28131 18.8301C7.53879 19.2185 6.96084 18.8589 7.00198 18.034L7.13324 15.2996C7.17243 14.4747 7.81307 13.4825 8.55756 13.094L16.1062 9.15591C16.8487 8.76748 17.4267 9.12707 17.3856 9.952L17.2543 12.6864H17.2562Z" fill="white" />
+              <path d="M26.8032 24.7025C26.7641 25.5274 26.1234 26.5196 25.3789 26.908L17.8283 30.8442C17.0858 31.2327 16.5078 30.8731 16.549 30.0482L16.6802 27.3138C16.7194 26.4889 17.3601 25.4966 18.1045 25.1082L25.6552 21.172C26.3977 20.7836 26.9756 21.1432 26.9345 21.9681L26.8032 24.7025Z" fill="white" />
+              <path d="M26.7308 16.3859C26.6916 17.2108 26.049 18.2011 25.3045 18.5857L8.41452 27.2869C7.67003 27.6714 7.09208 27.3099 7.13126 26.485L7.26253 23.7506C7.30171 22.9257 7.94432 21.9354 8.6888 21.5508L25.5788 12.8477C26.3232 12.4632 26.9012 12.8247 26.862 13.6496L26.7308 16.384V16.3859Z" fill="#FCC937" />
+            </g>
+            <defs>
+              <clipPath id="clip0_1_42">
+                <rect width="140" height="22" transform="translate(7 9)" />
+              </clipPath>
+            </defs>
+          </svg>
+        </span>
+      </footer>
+    </div>
+  );
+}

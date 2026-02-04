@@ -1,0 +1,130 @@
+<app-test-case-modal 
+  [isVisible]="isVisible" 
+  title="Create Test Case" 
+  size="medium"
+  (closeModal)="close()">
+  
+  <form (ngSubmit)="handleSubmit()" #createForm="ngForm">
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">Summary *</label>
+        <input 
+          type="text" 
+          [(ngModel)]="formData.summary"
+          name="summary"
+          required
+          class="form-control">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Description</label>
+        <textarea 
+          [(ngModel)]="formData.description"
+          name="description"
+          rows="3"
+          class="form-control"></textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Test Steps</label>
+        <textarea 
+          [(ngModel)]="formData.steps"
+          name="steps"
+          rows="4"
+          placeholder="1. Step one&#10;2. Step two"
+          class="form-control"></textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Expected Result</label>
+        <textarea 
+          [(ngModel)]="formData.expectedResult"
+          name="expectedResult"
+          rows="2"
+          class="form-control"></textarea>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Component *</label>
+        <select 
+          [(ngModel)]="formData.component"
+          name="component"
+          required
+          class="form-select">
+          <option value="">Select Component</option>
+          <option *ngFor="let component of jiraService.componentsData()" [value]="component.name">{{component.name}}</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Execution Status</label>
+        <select 
+          [(ngModel)]="formData.executionStatus"
+          name="executionStatus"
+          class="form-select">
+          <option *ngFor="let status of zephyrService.executionStatusesData()" [value]="status.name">{{status.name}}</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <div class="form-check">
+          <input 
+            type="checkbox" 
+            [(ngModel)]="formData.addCurrentSprint"
+            name="addCurrentSprint"
+            id="addCurrentSprint"
+            class="form-check-input">
+          <label for="addCurrentSprint" class="form-check-label">
+            Add current sprint
+            @if (getActiveSprint()) {
+              <span class="text-success fw-bold ms-1">
+                ({{getActiveSprint()?.name}})
+              </span>
+            }
+          </label>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Version</label>
+        <select 
+          [(ngModel)]="formData.version"
+          name="version"
+          (change)="onVersionChange($event)"
+          class="form-select">
+          <option value="">Select Version</option>
+          <option *ngFor="let version of jiraService.versionsData()" [value]="version.id">{{version.name}}</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Test Cycle</label>
+        <select 
+          [(ngModel)]="formData.testCycle"
+          name="testCycle"
+          class="form-select">
+          <option value="">Select Test Cycle</option>
+          <option *ngFor="let cycle of zephyrService.cyclesData()" [value]="cycle.id">{{cycle.name}}</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Related Task</label>
+        <input 
+          type="text" 
+          [(ngModel)]="formData.relatedTask"
+          name="relatedTask"
+          placeholder="e.g., TASK-123"
+          class="form-control">
+      </div>
+    </div>
+    <div class="d-flex justify-content-end gap-2 mt-4">
+      <button 
+        type="button"
+        (click)="close()"
+        class="btn btn-secondary">
+        Cancel
+      </button>
+      <button 
+        type="submit"
+        [disabled]="saving || !createForm.form.valid"
+        class="btn btn-primary">
+        @if (saving) {
+          <span class="spinner-border spinner-border-sm me-2"></span>
+        }
+        {{saving ? 'Creating...' : 'Create'}}
+      </button>
+    </div>
+  </form>
+</app-test-case-modal>

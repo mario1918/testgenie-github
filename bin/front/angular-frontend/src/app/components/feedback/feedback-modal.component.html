@@ -1,0 +1,55 @@
+<div class="modal-backdrop" *ngIf="isVisible" (click)="close()">
+  <div class="modal-content" [ngClass]="themeService.isDarkTheme() ? 'dark' : 'light'" (click)="$event.stopPropagation()">
+    <div class="modal-header border-bottom p-4">
+      <div class="text-center w-100">
+        <i class="bi feedback-icon" [ngClass]="[modalIcon, iconClass]"></i>
+        <h4 class="modal-title mb-0">{{ modalTitle }}</h4>
+      </div>
+      <button type="button" class="btn-close position-absolute top-0 end-0 m-3" (click)="close()" aria-label="Close"></button>
+    </div>
+
+    <div class="modal-body p-4">
+      <form (ngSubmit)="submit()">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">{{ modalLabel }} *</label>
+          <textarea 
+            class="form-control" 
+            [(ngModel)]="message" 
+            name="message"
+            rows="5" 
+            [placeholder]="'Share your ' + feedbackType + '...'"
+            required
+            [disabled]="isSubmitting"></textarea>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Your Name <span class="text-muted">(Optional)</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            [(ngModel)]="name" 
+            name="name"
+            placeholder="Enter your name"
+            [disabled]="isSubmitting">
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+          <button 
+            type="button" 
+            class="btn btn-secondary" 
+            (click)="close()"
+            [disabled]="isSubmitting">
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            class="btn btn-primary"
+            [disabled]="!message.trim() || isSubmitting">
+            <span *ngIf="isSubmitting" class="spinner-border spinner-border-sm me-2"></span>
+            {{ isSubmitting ? 'Submitting...' : 'Submit' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

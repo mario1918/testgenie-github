@@ -1,0 +1,20 @@
+{
+  "name": "buggenai",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "apps/ai-backend",
+    "apps/ai-frontend",
+    "apps/jira-zephyr"
+  ],
+  "scripts": {
+    "dev:ai-backend": "npm --prefix apps/ai-backend run dev",
+    "dev:ai-frontend": "npm --prefix apps/ai-frontend run dev",
+    "dev:jira-zephyr": "npm --prefix apps/jira-zephyr run dev",
+    "build:ai-frontend": "npm --prefix apps/ai-frontend run build",
+    "build:jira-zephyr": "npm --prefix apps/jira-zephyr run build",
+    "start:ai-backend": "npm --prefix apps/ai-backend run start",
+    "start:jira-zephyr": "npm --prefix apps/jira-zephyr run start"
+  }
+}

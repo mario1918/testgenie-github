@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Node.js API Server
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: jira-test-api
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      JIRA_BASE_URL: ${JIRA_BASE_URL}
+      JIRA_EMAIL: ${JIRA_EMAIL}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      BASE_URL: ${BASE_URL}
+      APP_USERNAME: ${APP_USERNAME}
+      APP_PASSWORD: ${APP_PASSWORD}
+      PLAYWRIGHT_HEADLESS: ${PLAYWRIGHT_HEADLESS:-true}
+      PLAYWRIGHT_SLOW_MO: ${PLAYWRIGHT_SLOW_MO:-1000}
+    volumes:
+      - ./tests:/app/tests
+      - ./src:/app/src
+    networks:
+      - jira-test-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - redis
+
+  # Optional: Redis for caching/queue
+  redis:
+    image: redis:7-alpine
+    container_name: jira-test-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - jira-test-net
+    volumes:
+      - redis-data:/data
+
+networks:
+  jira-test-net:
+    driver: bridge
+
+volumes:
+  redis-data:

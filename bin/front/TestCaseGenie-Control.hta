@@ -1,0 +1,208 @@
+<html>
+<head>
+    <title>TestCaseGenie Control</title>
+    <HTA:APPLICATION
+        ID="TestCaseGenieControl"
+        APPLICATIONNAME="TestCaseGenie Control"
+        BORDER="dialog"
+        BORDERSTYLE="normal"
+        CAPTION="yes"
+        MAXIMIZEBUTTON="no"
+        MINIMIZEBUTTON="no"
+        SHOWINTASKBAR="yes"
+        SINGLEINSTANCE="yes"
+        SYSMENU="yes"
+        WINDOWSTATE="normal"
+        ICON="../angular-frontend/public/newfav.ico"
+    />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 30px 40px;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            width: 380px;
+            position: relative;
+            animation: slideIn 0.4s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .logo-container {
+            margin-bottom: 20px;
+        }
+        
+        .logo {
+            width: 80px;
+            height: 70px;
+            object-fit: contain;
+            animation: fadeIn 0.6s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        h1 {
+            color: #1f2937;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            letter-spacing: -0.5px;
+        }
+        
+        .status-badge {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            background-color: #10b981 !important;
+            background: #10b981 !important;
+            color: #ffffff !important;
+            padding: 10px 20px !important;
+            border-radius: 50px !important;
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            margin: 20px 0 !important;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
+        }
+        
+        .pulse-dot {
+            width: 10px !important;
+            height: 10px !important;
+            background-color: #ffffff !important;
+            background: #ffffff !important;
+            border-radius: 50% !important;
+            display: inline-block !important;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.6;
+                transform: scale(1.1);
+            }
+        }
+        
+        .subtitle {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        
+        .button-container {
+            margin-top: 25px;
+        }
+        
+        button {
+            background-color: #dc2626 !important;
+            background: #dc2626 !important;
+            color: #ffffff !important;
+            border: 2px solid #b91c1c !important;
+            padding: 14px 45px !important;
+            font-size: 16px !important;
+            font-weight: bold !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4) !important;
+            letter-spacing: 0.5px !important;
+            display: inline-block !important;
+            text-align: center !important;
+        }
+        
+        button:hover {
+            background-color: #b91c1c !important;
+            background: #b91c1c !important;
+            border-color: #991b1b !important;
+        }
+        
+        button:active {
+            background-color: #991b1b !important;
+            background: #991b1b !important;
+        }
+        
+        .divider {
+            width: 60px !important;
+            height: 3px !important;
+            background-color: #6366f1 !important;
+            background: #6366f1 !important;
+            margin: 20px auto !important;
+            border-radius: 2px !important;
+            display: block !important;
+        }
+    </style>
+    <script language="VBScript">
+        Sub Window_OnLoad
+            ' Center and resize the window - make it much taller to ensure button visibility
+            window.resizeTo 440, 600
+            window.moveTo (screen.width - 440) / 2, (screen.height - 600) / 2
+        End Sub
+
+        Sub StopApplication
+            ' Kill all server processes
+            Dim WshShell
+            Set WshShell = CreateObject("WScript.Shell")
+            
+            On Error Resume Next
+            WshShell.Run "taskkill /F /IM node.exe /T", 0, True
+            WshShell.Run "taskkill /F /IM python.exe /T", 0, True
+            WshShell.Run "taskkill /F /IM py.exe /T", 0, True
+            On Error Goto 0
+            
+            MsgBox "TestCaseGenie has been stopped successfully.", vbInformation, "TestCaseGenie"
+            window.close
+        End Sub
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-container">
+            <img id="logo" src="icon.png" alt="TestCaseGenie Logo" class="logo">
+        </div>
+        <h1>TestCaseGenie</h1>
+        <div class="divider"></div>
+        <div class="status-badge">
+            <span class="pulse-dot"></span>
+            Running
+        </div>
+        <p class="subtitle">
+            Ready to use in your browser
+        </p>
+        <div class="button-container">
+            <button onclick="StopApplication()">Stop Application</button>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!-- Toolbar -->
+<div class="mb-3 d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 px-3">
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-light text-dark border">
+      {{ selectedCount }} selected
+    </span>
+    <button class="btn btn-sm btn-outline-secondary" (click)="clearSelection()" [disabled]="selectedCount === 0">Clear</button>
+  </div>
+  
+  <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-2">
+    <!-- Bulk Status Update -->
+    <div class="d-flex align-items-center gap-2">
+      <label class="mb-0 text-sm">Bulk status:</label>
+      <select class="form-select form-select-sm" [(ngModel)]="bulkJiraStatus" [disabled]="selectedCount === 0" style="width: auto; min-width: 120px;">
+        <option value="">Select Status</option>
+        <option *ngFor="let status of availableStatuses" [value]="status">{{status}}</option>
+      </select>
+      <button class="btn btn-sm btn-success" (click)="bulkUpdateStatus()" [disabled]="selectedCount === 0 || !bulkJiraStatus || isLoading">
+        <i class="bi bi-check-circle me-1"></i>Update
+      </button>
+    </div>
+    
+    <!-- Bulk Execute -->
+    <div class="d-flex align-items-center gap-2">
+      <label class="mb-0 text-sm">Bulk execute:</label>
+      <select class="form-select form-select-sm" [(ngModel)]="bulkStatus" [disabled]="selectedCount === 0" style="width: auto;">
+        <option value="UNEXECUTED">UNEXECUTED</option>
+        <option value="PASS">PASS</option>
+        <option value="FAIL">FAIL</option>
+        <option value="WIP">WIP</option>
+        <option value="BLOCKED">BLOCKED</option>
+      </select>
+      <button class="btn btn-sm btn-primary" (click)="bulkExecute()" [disabled]="selectedCount === 0 || isLoading">
+        <i class="bi bi-play-circle me-1"></i>Apply
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="table-responsive rounded border m-3">
+  <table class="table table-hover table-sm mb-0">
+    <thead class="table-light">
+      <tr>
+        <th style="width: 50px; padding-left: 10px;">
+          <input type="checkbox" class="form-check-input" [checked]="isAllPageSelected()" [indeterminate]="isPageIndeterminate()" (change)="toggleSelectAll($event)" />
+        </th>
+        <th style="width: 120px;">ID</th>
+        <th style="width: 200px;">Summary</th>
+        <th style="width: 120px;">Component</th>
+        <th style="width: 100px;">Status</th>
+        <th style="width: 100px;">Priority</th>
+        <th style="width: 100px;">Related Task</th>
+        <th style="width: 100px;">Created</th>
+        <th style="width: 120px;">Reporter</th>
+        <th style="width: 150px;">Execution</th>
+        <th style="width: 120px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Loading skeleton -->
+      <ng-container *ngIf="isLoading">
+        <tr *ngFor="let _ of skeletonArray" class="placeholder-glow">
+          <td><span class="placeholder col-12"></span></td>
+          <td><span class="placeholder col-12"></span></td>
+          <td><span class="placeholder col-12"></span></td>
+          <td><span class="placeholder col-8"></span></td>
+          <td><span class="placeholder col-8"></span></td>
+          <td><span class="placeholder col-8"></span></td>
+          <td><span class="placeholder col-10"></span></td>
+          <td><span class="placeholder col-10"></span></td>
+          <td><span class="placeholder col-10"></span></td>
+          <td><span class="placeholder col-12"></span></td>
+          <td><span class="placeholder col-12"></span></td>
+        </tr>
+      </ng-container>
+
+      <!-- Real rows -->
+      <ng-container *ngIf="!isLoading">
+        <tr *ngFor="let testCase of testCases; trackBy: trackById" class="align-middle">
+          <td style="padding-left: 10px;">
+            <input type="checkbox" class="form-check-input" [checked]="selectedIds.has(testCase.jiraID || testCase.id)" (change)="toggleSelection(testCase.jiraID || testCase.id, $event)" />
+          </td>
+          <td>
+            <a [href]="'https://arrowecommerce.atlassian.net/browse/' + (testCase.id)" class="text-decoration-none fw-semibold text-primary" target="_blank" rel="noopener noreferrer">
+              {{ testCase.id }}
+              <i class="bi bi-box-arrow-up-right ms-1 small"></i>
+            </a>
+          </td>
+          <td>
+            <div class="fw-medium">{{ testCase.summary || testCase.title }}</div>
+            <small class="text-muted" *ngIf="testCase.sprint">Sprint: {{ testCase.sprint }}</small>
+          </td>
+          <td>
+            <span class="badge bg-light text-dark border">{{ testCase.component || 'N/A' }}</span>
+          </td>
+          <td>
+            <!-- Loading state for status -->
+            <div *ngIf="statusLoadingStates.get(testCase.jiraID || testCase.id)" class="d-flex align-items-center gap-2">
+              <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <span class="placeholder col-6 placeholder-sm"></span>
+            </div>
+            <!-- Normal status badge -->
+            <span *ngIf="!statusLoadingStates.get(testCase.jiraID || testCase.id)" class="badge" [style]="badgeUtils.getStatusBadgeClass(testCase.status || 'N/A').style">{{ testCase.status || 'N/A' }}</span>
+          </td>
+          <td>
+            <span class="badge" [style]="badgeUtils.getPriorityBadgeClass(testCase.priority || 'N/A').style">{{ testCase.priority || 'N/A' }}</span>
+          </td>
+          <td>
+            <a *ngIf="testCase.relatedTask" [href]="'https://arrowecommerce.atlassian.net/browse/' + testCase.relatedTask" class="text-decoration-none" target="_blank" rel="noopener noreferrer">
+              {{ testCase.relatedTask }}
+            </a>
+            <span *ngIf="!testCase.relatedTask">None</span>
+          </td>
+          <td>{{ formatDate(testCase.created) }}</td>
+          <td>{{ testCase.createdBy || 'N/A' }}</td>
+          <td>
+            <!-- Loading state for execution -->
+            <div *ngIf="isRowLoading(testCase.jiraID || testCase.id)" class="d-flex align-items-center gap-2">
+              <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <span class="placeholder col-8 placeholder-sm"></span>
+            </div>
+            
+            <!-- Loaded execution state -->
+            <div *ngIf="!isRowLoading(testCase.jiraID || testCase.id)" class="d-flex align-items-center gap-2">
+              <select *ngIf="testCase.executionId" class="form-select form-select-sm" [value]="testCase.executionStatus || 'UNEXECUTED'" (change)="updateExecutionStatus(testCase.executionId!, testCase.jiraID || testCase.id, $any($event.target).value)">
+                <option value="UNEXECUTED">UNEXECUTED</option>
+                <option value="PASS">PASS</option>
+                <option value="FAIL">FAIL</option>
+                <option value="WIP">WIP</option>
+                <option value="BLOCKED">BLOCKED</option>
+              </select>
+              <div *ngIf="!testCase.executionId" class="d-flex align-items-center gap-2">
+                <small class="text-muted">No execution</small>
+                <app-warning-icon (clicked)="showCreateExecutionModal(testCase.jiraID!)" tooltip="No execution found - Click to add"></app-warning-icon>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="btn-group btn-group-sm">
+              <button 
+                class="btn btn-outline-primary" 
+                (click)="viewTestCase.emit(testCase.id)"
+                title="View Test Case">
+                <i class="bi bi-eye"></i>
+              </button>
+              <button 
+                class="btn btn-outline-success" 
+                (click)="editTestCase.emit(testCase.jiraID || testCase.id)"
+                title="Edit Test Case">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button 
+                class="btn btn-outline-danger" 
+                (click)="deleteTestCase.emit(testCase.jiraID || testCase.id)"
+                title="Delete Test Case"
+                disabled>
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      </ng-container>
+    </tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div class="d-flex justify-content-between align-items-center p-3 border-top bg-light" *ngIf="testCases.length > 0 && !isLoading">
+    <div class="text-muted">
+      {{ paginationInfo.start }} to {{ paginationInfo.end }} of {{ paginationInfo.total || 'many' }} items
+    </div>
+    <nav>
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item" [class.disabled]="paginationInfo.currentPage <= 1">
+          <button 
+            class="page-link" 
+            (click)="previousPage.emit(); clearSelection()"
+            [disabled]="paginationInfo.currentPage <= 1">
+            <i class="bi bi-chevron-left"></i> Previous
+          </button>
+        </li>
+        <li class="page-item active">
+          <span class="page-link">
+            Page {{ paginationInfo.currentPage }}
+          </span>
+        </li>
+        <li class="page-item" [class.disabled]="paginationInfo.currentPage >= paginationInfo.totalPages">
+          <button 
+            class="page-link" 
+            (click)="nextPage.emit(); clearSelection()"
+            [disabled]="paginationInfo.currentPage >= paginationInfo.totalPages">
+            Next <i class="bi bi-chevron-right"></i>
+          </button>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</div>

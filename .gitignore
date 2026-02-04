@@ -1,0 +1,27 @@
+# Status file for loading screen
+bin/front/status.txt
+
+# Node modules
+node_modules/
+
+# Dependencies
+**/node_modules/
+# **/venv/
+
+# Build files
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+startup.log
+python.log
+frontend.log
+backend.log

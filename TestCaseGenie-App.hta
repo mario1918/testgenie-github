@@ -1,0 +1,117 @@
+<html>
+<head>
+    <title>TestCaseGenie</title>
+    <HTA:APPLICATION
+        ID="TestCaseGenieApp"
+        APPLICATIONNAME="TestCaseGenie"
+        BORDER="thick"
+        BORDERSTYLE="normal"
+        CAPTION="yes"
+        MAXIMIZEBUTTON="yes"
+        MINIMIZEBUTTON="yes"
+        SHOWINTASKBAR="yes"
+        SINGLEINSTANCE="yes"
+        SYSMENU="yes"
+        WINDOWSTATE="maximize"
+        ICON="icon.ico"
+        NAVIGABLE="yes"
+        SCROLL="no"
+        CONTEXTMENU="yes"
+    />
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        #app-frame {
+            width: 100%;
+            height: 100vh;
+            border: none;
+            display: block;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 24px;
+            color: #6366f1;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #6366f1;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script language="VBScript">
+        Sub Window_OnLoad
+            ' Maximize the window
+            window.resizeTo screen.availWidth, screen.availHeight
+            window.moveTo 0, 0
+            
+            ' Set iframe to use modern rendering
+            On Error Resume Next
+            document.getElementById("app-frame").contentWindow.document.execCommand("BackgroundImageCache", false, true)
+            On Error Goto 0
+            
+            ' Hide loading after 5 seconds
+            window.setTimeout "HideLoading", 5000, "VBScript"
+        End Sub
+        
+        Sub HideLoading
+            On Error Resume Next
+            document.getElementById("loading").style.display = "none"
+            On Error Goto 0
+        End Sub
+        
+        Sub Window_OnBeforeUnload
+            ' Kill all server processes when window is closed
+            Dim WshShell
+            Set WshShell = CreateObject("WScript.Shell")
+            
+            Dim result
+            result = MsgBox("Close TestCaseGenie?" & vbCrLf & vbCrLf & "All servers will be stopped.", vbQuestion + vbYesNo, "TestCaseGenie")
+            
+            If result = vbYes Then
+                ' Kill all server processes
+                On Error Resume Next
+                WshShell.Run "taskkill /F /IM node.exe /T", 0, False
+                WshShell.Run "taskkill /F /IM python.exe /T", 0, False
+                WshShell.Run "taskkill /F /IM py.exe /T", 0, False
+                On Error Goto 0
+            Else
+                ' Cancel closing
+                window.event.cancelBubble = True
+                window.event.returnValue = False
+            End If
+        End Sub
+    </script>
+</head>
+<body>
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <div>Loading TestCaseGenie...</div>
+    </div>
+    <iframe id="app-frame" src="http://localhost:4200" frameborder="0" allowfullscreen="true" allow="*"></iframe>
+</body>
+</html>

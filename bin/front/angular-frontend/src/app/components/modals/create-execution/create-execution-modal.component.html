@@ -1,0 +1,73 @@
+<app-test-case-modal 
+  [isVisible]="isVisible" 
+  title="Add Execution" 
+  size="small"
+  (closeModal)="close()">
+  
+  <div>
+    <p class="text-muted mb-3">
+      This test case has no execution. Add it to a cycle and version to create an execution.
+    </p>
+    
+    <form (ngSubmit)="handleSubmit()" #executionForm="ngForm">
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label">Version *</label>
+          <select 
+            [(ngModel)]="formData.version_id"
+            name="version"
+            (change)="onVersionChange($event)"
+            required
+            class="form-select">
+            <option value="">Select Version</option>
+            <option *ngFor="let version of jiraService.versionsData()" [value]="version.id">{{version.name}}</option>
+          </select>
+        </div>
+        
+        <div class="col-12">
+          <label class="form-label">Cycle *</label>
+          <select 
+            [(ngModel)]="formData.cycle_id"
+            name="cycle"
+            required
+            class="form-select">
+            <option value="">Select Cycle</option>
+            <option *ngFor="let cycle of zephyrService.cyclesData()" [value]="cycle.id">{{cycle.name}}</option>
+          </select>
+        </div>
+        
+        <div class="col-12">
+          <label class="form-label">Initial Status</label>
+          <select 
+            [(ngModel)]="formData.execution_status_id"
+            name="status"
+            class="form-select">
+            <option value="">UNEXECUTED (Default)</option>
+            <option value="1">PASS</option>
+            <option value="2">FAIL</option>
+            <option value="3">WIP</option>
+            <option value="4">BLOCKED</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="d-flex justify-content-end gap-2 mt-4">
+        <button 
+          type="button"
+          (click)="close()"
+          class="btn btn-secondary">
+          Cancel
+        </button>
+        <button 
+          type="submit"
+          [disabled]="isLoading || !executionForm.form.valid"
+          class="btn btn-primary">
+          @if (isLoading) {
+            <span class="spinner-border spinner-border-sm me-2"></span>
+          }
+          {{isLoading ? 'Creating...' : 'Create Execution'}}
+        </button>
+      </div>
+    </form>
+  </div>
+</app-test-case-modal>

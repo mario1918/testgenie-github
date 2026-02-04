@@ -1,0 +1,139 @@
+<app-test-case-modal 
+  [isVisible]="isVisible" 
+  title="Edit Test Case" 
+  size="medium"
+  (closeModal)="close()">
+  
+  <form (ngSubmit)="handleSubmit()" #editForm="ngForm">
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label">Jira ID</label>
+        <input 
+          type="text" 
+          [(ngModel)]="formData.key"
+          name="jiraID"
+          readonly
+          class="form-control bg-light text-muted">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Summary *</label>
+        <input 
+          type="text" 
+          [(ngModel)]="formData.summary"
+          name="summary"
+          required
+          class="form-control">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Description</label>
+        <textarea 
+          [(ngModel)]="formData.description"
+          name="description"
+          rows="3"
+          class="form-control"></textarea>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Component *</label>
+        <select 
+          [(ngModel)]="formData.component"
+          name="component"
+          required
+          class="form-select">
+          <option value="">Select Component</option>
+          <option *ngFor="let component of jiraService.componentsData()" [value]="component.name">{{component.name}}</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Sprint</label>
+        <input 
+          type="text" 
+          [(ngModel)]="formData.sprint"
+          name="sprint"
+          readonly
+          class="form-control bg-light">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Status</label>
+        <div class="position-relative">
+          <select 
+            [(ngModel)]="formData.status"
+            name="status"
+            [disabled]="isLoadingTransitions"
+            class="form-select">
+            <option value="">Select Status</option>
+            <!-- Always show current status if it exists and is not in transitions -->
+            @if (formData.status && !isCurrentStatusInTransitions()) {
+              <option [value]="formData.status">{{formData.status}} (Current)</option>
+            }
+            @for (status of jiraService.getTransitionsData(); track $index) {
+              <option [value]="status.name">{{status.name}}</option>
+            }
+          </select>
+          @if (isLoadingTransitions) {
+            <div class="position-absolute top-50 end-0 translate-middle-y pe-3">
+              <span class="spinner-border spinner-border-sm text-primary"></span>
+            </div>
+          }
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Priority</label>
+        <select 
+          [(ngModel)]="formData.priority"
+          name="priority"
+          class="form-select">
+          <option value="">Select Priority</option>
+          <option value="Blocker">Blocker</option>
+          <option value="Critical">Critical</option>
+          <option value="Major">Major</option>
+          <option value="Minor">Minor</option>
+          <option value="Trivial">Trivial</option>
+          <option value="No Priority">No Priority</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Related Task</label>
+        <input 
+          type="text" 
+          [(ngModel)]="formData.relatedTask"
+          name="relatedTask"
+          class="form-control">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Test Steps</label>
+        <textarea 
+          [(ngModel)]="formData.steps"
+          name="steps"
+          rows="4"
+          placeholder="Enter test execution steps..."
+          class="form-control"></textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Expected Results</label>
+        <textarea 
+          [(ngModel)]="formData.expectedResult"
+          name="expectedResult"
+          rows="3"
+          placeholder="Enter expected test results..."
+          class="form-control"></textarea>
+      </div>
+    </div>
+    <div class="d-flex justify-content-end gap-2 mt-4">
+      <button 
+        type="button"
+        (click)="close()"
+        class="btn btn-secondary">
+        Cancel
+      </button>
+      <button 
+        type="submit"
+        [disabled]="saving || !editForm.form.valid"
+        class="btn btn-primary">
+        @if (saving) {
+          <span class="spinner-border spinner-border-sm me-2"></span>
+        }
+        {{saving ? 'Updating...' : 'Update'}}
+      </button>
+    </div>
+  </form>
+</app-test-case-modal>
