@@ -20,10 +20,35 @@ _suggestions_cache = {
     "components": [],
     "sprints": [],
     "last_updated": 0,
-    "cache_ttl": 300  # 5 minutes
+    "cache_ttl": 18000  # 5 hours
 }
 
 router = APIRouter(prefix="/api/ai/jql", tags=["ai-jql"])
+
+
+async def init_suggestions_cache():
+    """Initialize the suggestions cache on app startup."""
+    global _suggestions_cache
+    logger.info("Initializing suggestions cache on startup...")
+    
+    try:
+        comp_data = await jira_service.get_components("SE2")
+        if comp_data:
+            _suggestions_cache["components"] = [c.get("name", "") for c in comp_data if c.get("name")]
+            logger.info(f"Cached {len(_suggestions_cache['components'])} components")
+    except Exception as e:
+        logger.warning(f"Could not fetch components on startup: {e}")
+    
+    try:
+        sprint_data = await jira_service.get_all_sprints_ordered()
+        if sprint_data:
+            _suggestions_cache["sprints"] = [s.name for s in sprint_data if s.name]
+            logger.info(f"Cached {len(_suggestions_cache['sprints'])} sprints")
+    except Exception as e:
+        logger.warning(f"Could not fetch sprints on startup: {e}")
+    
+    _suggestions_cache["last_updated"] = time.time()
+    logger.info("Suggestions cache initialized successfully")
 
 
 # Request/Response Models

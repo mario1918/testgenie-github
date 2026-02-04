@@ -11,6 +11,7 @@ from starlette.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.exception_handlers import setup_exception_handlers
 from app.routers import jira, test_case, zephyr, ai_jql
+from app.routers.ai_jql import init_suggestions_cache
 from app.auth.auth_atlassian import router as atlassian_router
 from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -50,6 +51,15 @@ app.include_router(test_case.router)
 app.include_router(zephyr.router)
 app.include_router(atlassian_router)
 app.include_router(ai_jql.router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize caches on app startup."""
+    logger.info("App starting up - initializing caches...")
+    await init_suggestions_cache()
+    logger.info("Startup complete")
+
 
 @app.get("/api/health")
 async def health_check():
