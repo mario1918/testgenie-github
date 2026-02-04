@@ -443,21 +443,27 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
         else:
             # Check for component keyword (match partial words too)
             if "component" in query or "comp" in query or any(w in ["team"] for w in words):
-                # Extract text after "component" to filter
+                # Extract text after "component" to filter and preserve prefix
                 filter_text = ""
+                prefix = query  # Default to full query
+                
                 if "component " in query:
-                    filter_text = query.split("component ")[-1].strip()
+                    parts = query.split("component ")
+                    prefix = parts[0] + "component "
+                    filter_text = parts[-1].strip()
                 elif "comp " in query:
-                    filter_text = query.split("comp ")[-1].strip()
+                    parts = query.split("comp ")
+                    prefix = parts[0] + "component "
+                    filter_text = parts[-1].strip()
                 
                 # Filter components by partial match
                 filtered_comps = components
                 if filter_text:
                     filtered_comps = [c for c in components if filter_text.lower() in c.lower()]
                 
-                for comp in filtered_comps[:8]:
-                    suggestions.append(f"Show bugs in component {comp}")
-                    suggestions.append(f"Show issues in component {comp}")
+                # Preserve user's input and complete with component name
+                for comp in filtered_comps[:10]:
+                    suggestions.append(f"{prefix}{comp}")
             
             # Check for status keyword
             elif any(w in ["status", "state"] for w in words):
@@ -493,21 +499,27 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
             # Check for sprint keyword (match partial words too)
             elif "sprint" in query or "iteration" in query:
                 if sprints:
-                    # Extract text after "sprint" to filter
+                    # Extract text after "sprint" to filter and preserve prefix
                     filter_text = ""
+                    prefix = query  # Default to full query
+                    
                     if "sprint " in query:
-                        filter_text = query.split("sprint ")[-1].strip()
+                        parts = query.split("sprint ")
+                        prefix = parts[0] + "sprint "
+                        filter_text = parts[-1].strip()
                     elif "iteration " in query:
-                        filter_text = query.split("iteration ")[-1].strip()
+                        parts = query.split("iteration ")
+                        prefix = parts[0] + "sprint "
+                        filter_text = parts[-1].strip()
                     
                     # Filter sprints by partial match
                     filtered_sprints = sprints
                     if filter_text:
                         filtered_sprints = [s for s in sprints if filter_text.lower() in s.lower()]
                     
-                    for sprint_name in filtered_sprints[:8]:
-                        suggestions.append(f"Show issues in sprint {sprint_name}")
-                        suggestions.append(f"Show bugs in sprint {sprint_name}")
+                    # Preserve user's input and complete with sprint name
+                    for sprint_name in filtered_sprints[:10]:
+                        suggestions.append(f"{prefix}{sprint_name}")
                 else:
                     suggestions.extend([
                         "Show issues in current sprint",
