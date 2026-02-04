@@ -192,6 +192,48 @@ Else
     WriteLog "Backend node_modules exists, skipping npm install"
 End If
 
+' Check and install npm dependencies for AI Automation only if needed or after updates
+aiAutomationNodeModules = strScriptPath & "\AI Automation\node_modules"
+If Not objFSO.FolderExists(aiAutomationNodeModules) Or hasUpdates Then
+    UpdateStatus "Installing AI Automation dependencies..."
+    WriteLog "Running npm install for AI Automation..."
+    aiAutomationNpmInstallCmd = "cmd /c cd /d """ & strScriptPath & "\AI Automation"" && npm install >> """ & strLogFile & """ 2>&1"
+    aiAutomationNpmExitCode = WshShell.Run(aiAutomationNpmInstallCmd, 0, True)
+    
+    If aiAutomationNpmExitCode <> 0 Then
+        WriteLog "ERROR: AI Automation npm install failed with exit code: " & aiAutomationNpmExitCode
+        MsgBox "ERROR: Failed to install AI Automation npm dependencies." & vbCrLf & vbCrLf & _
+               "Please check your internet connection and try again." & vbCrLf & _
+               "Check startup.log for details.", vbCritical, "TestCaseGenie Error"
+        WScript.Quit 1
+    Else
+        WriteLog "AI Automation npm install successful"
+    End If
+Else
+    WriteLog "AI Automation node_modules exists, skipping npm install"
+End If
+
+' Check and install npm dependencies for BugGen only if needed or after updates
+bugGenNodeModules = strScriptPath & "\BugGen\node_modules"
+If Not objFSO.FolderExists(bugGenNodeModules) Or hasUpdates Then
+    UpdateStatus "Installing BugGen dependencies..."
+    WriteLog "Running npm install for BugGen..."
+    bugGenNpmInstallCmd = "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm install >> """ & strLogFile & """ 2>&1"
+    bugGenNpmExitCode = WshShell.Run(bugGenNpmInstallCmd, 0, True)
+    
+    If bugGenNpmExitCode <> 0 Then
+        WriteLog "ERROR: BugGen npm install failed with exit code: " & bugGenNpmExitCode
+        MsgBox "ERROR: Failed to install BugGen npm dependencies." & vbCrLf & vbCrLf & _
+               "Please check your internet connection and try again." & vbCrLf & _
+               "Check startup.log for details.", vbCritical, "TestCaseGenie Error"
+        WScript.Quit 1
+    Else
+        WriteLog "BugGen npm install successful"
+    End If
+Else
+    WriteLog "BugGen node_modules exists, skipping npm install"
+End If
+
 ' Setup Python virtual environment and install dependencies
 UpdateStatus "Checking Python environment..."
 WriteLog "Checking Python environment..."
@@ -357,6 +399,22 @@ Else
     WriteLog "Port 8000 is available"
 End If
 
+' Check port 3000 (AI Automation)
+Set colPorts = objWMI.ExecQuery("SELECT * FROM Win32_Process WHERE CommandLine LIKE '%3000%'")
+If colPorts.Count > 0 Then
+    WriteLog "WARNING: Port 3000 may already be in use"
+Else
+    WriteLog "Port 3000 is available"
+End If
+
+' Check port 4000 (BugGen AI Backend)
+Set colPorts = objWMI.ExecQuery("SELECT * FROM Win32_Process WHERE CommandLine LIKE '%4000%'")
+If colPorts.Count > 0 Then
+    WriteLog "WARNING: Port 4000 may already be in use"
+Else
+    WriteLog "Port 4000 is available"
+End If
+
 WriteLog "Starting Node.js backend server..."
 WriteLog "Command: cd /d """ & strScriptPath & "\bin\system\model\Backend"" && node server.js"
 ' Start Backend (Node.js) - Hidden
@@ -377,6 +435,27 @@ WriteLog "Command: cd /d """ & pythonBackendPath & """ && venv\Scripts\python.ex
 ' Start Python Backend - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\bin\system\jira\TestGenie-BE"" && venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload > """ & strScriptPath & "\python.log"" 2>&1", 0, False
 WriteLog "Python backend process started"
+WScript.Sleep 2000
+
+WriteLog "Starting AI Automation server..."
+WriteLog "Command: cd /d """ & strScriptPath & "\AI Automation"" && npm run dev"
+' Start AI Automation - Hidden
+WshShell.Run "cmd /c cd /d """ & strScriptPath & "\AI Automation"" && npm run dev > """ & strScriptPath & "\ai-automation.log"" 2>&1", 0, False
+WriteLog "AI Automation process started"
+WScript.Sleep 2000
+
+WriteLog "Starting BugGen AI Backend server..."
+WriteLog "Command: cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-backend"
+' Start BugGen AI Backend - Hidden
+WshShell.Run "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-backend > """ & strScriptPath & "\buggen-backend.log"" 2>&1", 0, False
+WriteLog "BugGen AI Backend process started"
+WScript.Sleep 2000
+
+WriteLog "Starting BugGen AI Frontend server..."
+WriteLog "Command: cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-frontend"
+' Start BugGen AI Frontend - Hidden
+WshShell.Run "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-frontend > """ & strScriptPath & "\buggen-frontend.log"" 2>&1", 0, False
+WriteLog "BugGen AI Frontend process started"
 
 ' Wait for servers to start
 WriteLog "Waiting 10 seconds for servers to initialize..."
@@ -473,7 +552,9 @@ WriteLog "All server startup commands executed"
 WriteLog "========== Startup Complete =========="
 WriteLog "Frontend: http://localhost:4200"
 WriteLog "Python API: http://localhost:8000"
-WriteLog "Check frontend.log, backend.log, and python.log for server output"
+WriteLog "AI Automation: http://localhost:3000"
+WriteLog "BugGen AI Backend: http://localhost:4000"
+WriteLog "Check frontend.log, backend.log, python.log, ai-automation.log, buggen-backend.log, buggen-frontend.log for server output"
 
 ' Start monitoring script to auto-cleanup when browser closes
 WriteLog "Starting monitor-and-cleanup script..."

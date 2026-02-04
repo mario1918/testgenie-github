@@ -89,7 +89,8 @@
                     [(ngModel)]="aiSearchInput"
                     placeholder="Describe what you want to find (e.g., 'Show open bugs assigned to Ahmed')"
                     (input)="onAiSearchInputChange($event)"
-                    (focus)="showAiSuggestions = true"
+                    (keydown)="onAiSearchKeydown($event)"
+                    (focus)="showAiSuggestions = true; selectedSuggestionIndex = -1"
                     (blur)="hideAiSuggestionsDelayed()"
                     (keyup.enter)="generateJqlFromAi()"
                     [disabled]="isGeneratingJql">
@@ -115,11 +116,13 @@
                   </div>
                   <!-- Suggestions list -->
                   <div 
-                    *ngFor="let suggestion of aiSuggestions" 
+                    *ngFor="let suggestion of aiSuggestions; let i = index" 
                     class="px-3 py-2 cursor-pointer suggestion-item"
+                    [class.bg-primary]="i === selectedSuggestionIndex"
+                    [class.text-white]="i === selectedSuggestionIndex"
                     style="cursor: pointer;"
                     (mousedown)="selectAiSuggestion(suggestion)">
-                    <i class="bi bi-lightbulb text-warning me-2"></i>
+                    <i class="bi bi-lightbulb me-2" [class.text-warning]="i !== selectedSuggestionIndex"></i>
                     {{ suggestion }}
                   </div>
                 </div>
