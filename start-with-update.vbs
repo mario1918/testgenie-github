@@ -115,123 +115,114 @@ Else
     WScript.Sleep 1000
 End If
 
-' Always clear Angular cache to ensure fresh build (even for local changes)
-UpdateStatus "Clearing Angular build cache..."
-WriteLog "Clearing Angular cache..."
+' Only clear Angular cache if there are updates
+If hasUpdates Then
+    UpdateStatus "Clearing Angular build cache..."
+    WriteLog "Clearing Angular cache..."
 
-' Delete entire .angular folder (not just cache)
-angularFolder = strScriptPath & "\bin\front\angular-frontend\.angular"
-If objFSO.FolderExists(angularFolder) Then
-    On Error Resume Next
-    objFSO.DeleteFolder angularFolder, True
-    WriteLog "Deleted .angular folder"
-    On Error Goto 0
+    ' Delete entire .angular folder (not just cache)
+    angularFolder = strScriptPath & "\bin\front\angular-frontend\.angular"
+    If objFSO.FolderExists(angularFolder) Then
+        On Error Resume Next
+        objFSO.DeleteFolder angularFolder, True
+        WriteLog "Deleted .angular folder"
+        On Error Goto 0
+    End If
+
+    ' Delete node_modules/.cache folder
+    nodeModulesCachePath = strScriptPath & "\bin\front\angular-frontend\node_modules\.cache"
+    If objFSO.FolderExists(nodeModulesCachePath) Then
+        On Error Resume Next
+        objFSO.DeleteFolder nodeModulesCachePath, True
+        WriteLog "Deleted node_modules/.cache folder"
+        On Error Goto 0
+    End If
+
+    ' Delete dist folder
+    distFolder = strScriptPath & "\bin\front\angular-frontend\dist"
+    If objFSO.FolderExists(distFolder) Then
+        On Error Resume Next
+        objFSO.DeleteFolder distFolder, True
+        WriteLog "Deleted dist folder"
+        On Error Goto 0
+    End If
+
+    WScript.Sleep 500
+Else
+    WriteLog "No updates, skipping Angular cache clear"
 End If
 
-' Delete node_modules/.cache folder
-nodeModulesCachePath = strScriptPath & "\bin\front\angular-frontend\node_modules\.cache"
-If objFSO.FolderExists(nodeModulesCachePath) Then
-    On Error Resume Next
-    objFSO.DeleteFolder nodeModulesCachePath, True
-    WriteLog "Deleted node_modules/.cache folder"
-    On Error Goto 0
-End If
-
-' Delete dist folder
-distFolder = strScriptPath & "\bin\front\angular-frontend\dist"
-If objFSO.FolderExists(distFolder) Then
-    On Error Resume Next
-    objFSO.DeleteFolder distFolder, True
-    WriteLog "Deleted dist folder"
-    On Error Goto 0
-End If
-
-WScript.Sleep 500
-
-' Check and install npm dependencies for Angular frontend only if needed or after updates
+' Check which npm installs are needed
 angularNodeModules = strScriptPath & "\bin\front\angular-frontend\node_modules"
-If Not objFSO.FolderExists(angularNodeModules) Or hasUpdates Then
-    UpdateStatus "Installing Angular frontend dependencies..."
-    WriteLog "Running npm install for Angular frontend..."
-    npmInstallCmd = "cmd /c cd /d """ & strScriptPath & "\bin\front\angular-frontend"" && npm install >> """ & strLogFile & """ 2>&1"
-    npmExitCode = WshShell.Run(npmInstallCmd, 0, True)
-    
-    ' Check if npm install succeeded
-    If npmExitCode <> 0 Then
-        WriteLog "ERROR: Angular npm install failed with exit code: " & npmExitCode
-        MsgBox "ERROR: Failed to install Angular npm dependencies." & vbCrLf & vbCrLf & _
-               "Please check your internet connection and try again." & vbCrLf & _
-               "Check startup.log for details.", vbCritical, "TestCaseGenie Error"
-        WScript.Quit 1
-    Else
-        WriteLog "Angular npm install successful"
-    End If
-Else
-    WriteLog "Angular node_modules exists, skipping npm install"
-End If
-
-' Check and install npm dependencies for Node.js backend only if needed or after updates
 backendNodeModules = strScriptPath & "\bin\system\model\Backend\node_modules"
-If Not objFSO.FolderExists(backendNodeModules) Or hasUpdates Then
-    UpdateStatus "Installing Node.js backend dependencies..."
-    WriteLog "Running npm install for Node.js backend..."
-    backendNpmInstallCmd = "cmd /c cd /d """ & strScriptPath & "\bin\system\model\Backend"" && npm install >> """ & strLogFile & """ 2>&1"
-    backendNpmExitCode = WshShell.Run(backendNpmInstallCmd, 0, True)
-    
-    ' Check if backend npm install succeeded
-    If backendNpmExitCode <> 0 Then
-        WriteLog "ERROR: Node.js backend npm install failed with exit code: " & backendNpmExitCode
-        MsgBox "ERROR: Failed to install Node.js backend npm dependencies." & vbCrLf & vbCrLf & _
-               "Please check your internet connection and try again." & vbCrLf & _
-               "Check startup.log for details.", vbCritical, "TestCaseGenie Error"
-        WScript.Quit 1
-    Else
-        WriteLog "Node.js backend npm install successful"
-    End If
-Else
-    WriteLog "Backend node_modules exists, skipping npm install"
-End If
-
-' Check and install npm dependencies for AI Automation only if needed or after updates
 aiAutomationNodeModules = strScriptPath & "\AI Automation\node_modules"
-If Not objFSO.FolderExists(aiAutomationNodeModules) Or hasUpdates Then
-    UpdateStatus "Installing AI Automation dependencies..."
-    WriteLog "Running npm install for AI Automation..."
-    aiAutomationNpmInstallCmd = "cmd /c cd /d """ & strScriptPath & "\AI Automation"" && npm install >> """ & strLogFile & """ 2>&1"
-    aiAutomationNpmExitCode = WshShell.Run(aiAutomationNpmInstallCmd, 0, True)
-    
-    If aiAutomationNpmExitCode <> 0 Then
-        WriteLog "ERROR: AI Automation npm install failed with exit code: " & aiAutomationNpmExitCode
-        MsgBox "ERROR: Failed to install AI Automation npm dependencies." & vbCrLf & vbCrLf & _
-               "Please check your internet connection and try again." & vbCrLf & _
-               "Check startup.log for details.", vbCritical, "TestCaseGenie Error"
-        WScript.Quit 1
-    Else
-        WriteLog "AI Automation npm install successful"
-    End If
-Else
-    WriteLog "AI Automation node_modules exists, skipping npm install"
-End If
-
-' Check and install npm dependencies for BugGen only if needed or after updates
 bugGenNodeModules = strScriptPath & "\BugGen\node_modules"
-If Not objFSO.FolderExists(bugGenNodeModules) Or hasUpdates Then
-    UpdateStatus "Installing BugGen dependencies..."
-    WriteLog "Running npm install for BugGen..."
-    bugGenNpmInstallCmd = "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm install >> """ & strLogFile & """ 2>&1"
-    bugGenNpmExitCode = WshShell.Run(bugGenNpmInstallCmd, 0, True)
+
+Dim needAngularInstall, needBackendInstall, needAIAutomationInstall, needBugGenInstall
+needAngularInstall = (Not objFSO.FolderExists(angularNodeModules) Or hasUpdates)
+needBackendInstall = (Not objFSO.FolderExists(backendNodeModules) Or hasUpdates)
+needAIAutomationInstall = (Not objFSO.FolderExists(aiAutomationNodeModules) Or hasUpdates)
+needBugGenInstall = (Not objFSO.FolderExists(bugGenNodeModules) Or hasUpdates)
+
+' Run npm installs in PARALLEL if needed
+If needAngularInstall Or needBackendInstall Or needAIAutomationInstall Or needBugGenInstall Then
+    UpdateStatus "Installing npm dependencies in parallel..."
+    WriteLog "Starting parallel npm installs..."
     
-    If bugGenNpmExitCode <> 0 Then
-        WriteLog "ERROR: BugGen npm install failed with exit code: " & bugGenNpmExitCode
-        MsgBox "ERROR: Failed to install BugGen npm dependencies." & vbCrLf & vbCrLf & _
-               "Please check your internet connection and try again." & vbCrLf & _
-               "Check startup.log for details.", vbCritical, "TestCaseGenie Error"
-        WScript.Quit 1
+    ' Start all npm installs in parallel (non-blocking)
+    If needAngularInstall Then
+        WriteLog "Starting Angular npm install..."
+        WshShell.Run "cmd /c cd /d """ & strScriptPath & "\bin\front\angular-frontend"" && npm install >> """ & strScriptPath & "\npm-angular.log"" 2>&1", 0, False
     Else
-        WriteLog "BugGen npm install successful"
+        WriteLog "Angular node_modules exists, skipping"
     End If
+    
+    If needBackendInstall Then
+        WriteLog "Starting Node.js backend npm install..."
+        WshShell.Run "cmd /c cd /d """ & strScriptPath & "\bin\system\model\Backend"" && npm install >> """ & strScriptPath & "\npm-backend.log"" 2>&1", 0, False
+    Else
+        WriteLog "Backend node_modules exists, skipping"
+    End If
+    
+    If needAIAutomationInstall Then
+        WriteLog "Starting AI Automation npm install..."
+        WshShell.Run "cmd /c cd /d """ & strScriptPath & "\AI Automation"" && npm install >> """ & strScriptPath & "\npm-ai-automation.log"" 2>&1", 0, False
+    Else
+        WriteLog "AI Automation node_modules exists, skipping"
+    End If
+    
+    If needBugGenInstall Then
+        WriteLog "Starting BugGen npm install..."
+        WshShell.Run "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm install >> """ & strScriptPath & "\npm-buggen.log"" 2>&1", 0, False
+    Else
+        WriteLog "BugGen node_modules exists, skipping"
+    End If
+    
+    ' Wait for npm installs to complete by checking for node_modules folders
+    WriteLog "Waiting for parallel npm installs to complete..."
+    Dim installTimeout, startTime
+    installTimeout = 300 ' 5 minutes max
+    startTime = Timer
+    
+    Do While Timer - startTime < installTimeout
+        Dim allDone
+        allDone = True
+        
+        If needAngularInstall And Not objFSO.FolderExists(angularNodeModules) Then allDone = False
+        If needBackendInstall And Not objFSO.FolderExists(backendNodeModules) Then allDone = False
+        If needAIAutomationInstall And Not objFSO.FolderExists(aiAutomationNodeModules) Then allDone = False
+        If needBugGenInstall And Not objFSO.FolderExists(bugGenNodeModules) Then allDone = False
+        
+        If allDone Then Exit Do
+        
+        UpdateStatus "Installing dependencies... (" & Int(Timer - startTime) & "s)"
+        WScript.Sleep 2000
+    Loop
+    
+    WriteLog "Parallel npm installs completed (or timed out)"
+    WScript.Sleep 3000 ' Brief pause to let npm finish writing
 Else
-    WriteLog "BugGen node_modules exists, skipping npm install"
+    WriteLog "All node_modules exist, skipping all npm installs"
 End If
 
 ' Setup Python virtual environment and install dependencies
@@ -415,81 +406,61 @@ Else
     WriteLog "Port 4000 is available"
 End If
 
+' Start ALL servers in PARALLEL (no sequential waits)
+WriteLog "Starting all servers in parallel..."
+
 WriteLog "Starting Node.js backend server..."
-WriteLog "Command: cd /d """ & strScriptPath & "\bin\system\model\Backend"" && node server.js"
-' Start Backend (Node.js) - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\bin\system\model\Backend"" && node server.js > """ & strScriptPath & "\backend.log"" 2>&1", 0, False
-WriteLog "Node.js backend process started"
-WScript.Sleep 2000
 
 WriteLog "Starting Angular frontend server..."
-WriteLog "Command: cd /d """ & strScriptPath & "\bin\front\angular-frontend"" && npm start"
-' Start Angular Frontend - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\bin\front\angular-frontend"" && npm start > """ & strScriptPath & "\frontend.log"" 2>&1", 0, False
-WriteLog "Angular frontend process started"
-WScript.Sleep 2000
 
 WriteLog "Starting Python backend server..."
-WriteLog "Using venv python: " & pythonBackendPath & "\venv\Scripts\python.exe"
-WriteLog "Command: cd /d """ & pythonBackendPath & """ && venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
-' Start Python Backend - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\bin\system\jira\TestGenie-BE"" && venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload > """ & strScriptPath & "\python.log"" 2>&1", 0, False
-WriteLog "Python backend process started"
-WScript.Sleep 2000
 
 WriteLog "Starting AI Automation server..."
-WriteLog "Command: cd /d """ & strScriptPath & "\AI Automation"" && npm run dev"
-' Start AI Automation - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\AI Automation"" && npm run dev > """ & strScriptPath & "\ai-automation.log"" 2>&1", 0, False
-WriteLog "AI Automation process started"
-WScript.Sleep 2000
 
 WriteLog "Starting BugGen AI Backend server..."
-WriteLog "Command: cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-backend"
-' Start BugGen AI Backend - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-backend > """ & strScriptPath & "\buggen-backend.log"" 2>&1", 0, False
-WriteLog "BugGen AI Backend process started"
-WScript.Sleep 2000
 
 WriteLog "Starting BugGen AI Frontend server..."
-WriteLog "Command: cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-frontend"
-' Start BugGen AI Frontend - Hidden
 WshShell.Run "cmd /c cd /d """ & strScriptPath & "\BugGen"" && npm run dev:ai-frontend > """ & strScriptPath & "\buggen-frontend.log"" 2>&1", 0, False
-WriteLog "BugGen AI Frontend process started"
 
-' Wait for servers to start
-WriteLog "Waiting 10 seconds for servers to initialize..."
-UpdateStatus "Waiting for servers to start..."
-WScript.Sleep 10000
+WriteLog "All server start commands issued in parallel"
 
-WriteLog "Checking if servers are running..."
-' Check if Angular process is running
-Set colProcesses = objWMI.ExecQuery("SELECT * FROM Win32_Process WHERE Name='node.exe' AND CommandLine LIKE '%angular%'")
-If colProcesses.Count > 0 Then
-    WriteLog "[OK] Angular server is running (PID: " & colProcesses.ItemIndex(0).ProcessId & ")"
-Else
-    WriteLog "[WARNING] Angular server may not be running!"
+' Wait for Angular to be ready by checking if port 4200 is listening (using netstat)
+WriteLog "Waiting for servers to be ready..."
+
+Dim angularReady, waitStart, maxWait
+angularReady = False
+waitStart = Timer
+maxWait = 180 ' 3 minutes max wait for Angular build
+
+WriteLog "Waiting for Angular to build and start (port 4200)..."
+Do While Not angularReady And (Timer - waitStart) < maxWait
+    UpdateStatus "Building Angular... (" & Int(Timer - waitStart) & "s)"
+    
+    ' Check if port 4200 is listening using netstat
+    Set objExec = WshShell.Exec("cmd /c netstat -an | findstr "":4200.*LISTENING""")
+    Do While objExec.Status = 0
+        WScript.Sleep 100
+    Loop
+    
+    If objExec.ExitCode = 0 Then
+        angularReady = True
+        WriteLog "[OK] Angular is ready on port 4200"
+    Else
+        WScript.Sleep 3000
+    End If
+Loop
+
+If Not angularReady Then
+    WriteLog "[WARNING] Angular did not start within " & maxWait & " seconds"
+    WriteLog "Check frontend.log for errors"
 End If
 
-' Check if Python process is running
-Set colProcesses = objWMI.ExecQuery("SELECT * FROM Win32_Process WHERE (Name='python.exe' OR Name='py.exe') AND CommandLine LIKE '%uvicorn%'")
-If colProcesses.Count > 0 Then
-    WriteLog "[OK] Python server is running (PID: " & colProcesses.ItemIndex(0).ProcessId & ")"
-Else
-    WriteLog "[WARNING] Python server may not be running!"
-End If
-
-' Check if Node backend is running
-Set colProcesses = objWMI.ExecQuery("SELECT * FROM Win32_Process WHERE Name='node.exe' AND CommandLine LIKE '%Backend%'")
-If colProcesses.Count > 0 Then
-    WriteLog "[OK] Node.js backend is running (PID: " & colProcesses.ItemIndex(0).ProcessId & ")"
-Else
-    WriteLog "[WARNING] Node.js backend may not be running!"
-End If
-
-UpdateStatus "Almost ready..."
-WriteLog "Waiting additional 5 seconds for full initialization..."
-WScript.Sleep 5000
+WriteLog "Server readiness check complete (" & Int(Timer - waitStart) & "s)"
 
 ' Clean up status file
 If objFSO.FileExists(strStatusFile) Then
