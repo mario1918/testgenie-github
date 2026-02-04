@@ -25,7 +25,10 @@ type Step = {
   orderId?: string | number;
 };
 
-const API_PREFIX = "/zephyr-api";
+const API_PREFIX = "/jira-zephyr-api";
+
+let generatePromptInFlight = false;
+let aiStreamInFlight = false;
 
 function extractIssueKey(input: string) {
   const v = String(input || "").trim();
@@ -68,19 +71,32 @@ function buildAiBugPrompt(task: Task | null, test: TestRow | null, steps: Step[]
     `${stepsText}`,
     `- Components: ${components}`,
     `- Parent Key: ${parentKey}`,
-    `- Current Sprint: ${sprintName}`
+    `- Sprint: ${sprintName}`
   ].join("\n");
 }
 
 async function readJsonOrThrow(res: Response) {
-  const data = await res.json().catch(() => ({}));
+  const text = await res.text().catch(() => "");
+  const parsed = (() => {
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  })();
+
   if (!res.ok) {
-    throw new Error((data as any)?.error || `Request failed (${res.status})`);
+    const errFromJson = parsed && typeof (parsed as any)?.error === "string" ? String((parsed as any).error) : "";
+    const errFromText = !parsed && text ? String(text).trim() : "";
+    const suffix = errFromJson || errFromText ? `: ${errFromJson || errFromText}` : "";
+    throw new Error(`Request failed (${res.status})${suffix}`);
   }
-  return data as any;
+
+  return (parsed && typeof parsed === "object" ? parsed : {}) as any;
 }
 
-export default function ZephyrPanel() {
+export default function ZephyrPanel({ isActive = true }: { isActive?: boolean }) {
   const [input, setInput] = useState("");
   const issueKey = useMemo(() => extractIssueKey(input), [input]);
 
@@ -99,11 +115,33 @@ export default function ZephyrPanel() {
   const [activeTestSteps, setActiveTestSteps] = useState<Step[] | null>(null);
   const [activeTestStepsError, setActiveTestStepsError] = useState<string | null>(null);
   const [activeTestGenerating, setActiveTestGenerating] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+
+  useEffect(() => {
+    setActiveTestGenerating(generatePromptInFlight);
+    const w = window as any;
+    const inFlightFromWindow = typeof w?.__BUGGENAI_AI_STREAM_INFLIGHT === "boolean" ? Boolean(w.__BUGGENAI_AI_STREAM_INFLIGHT) : null;
+    aiStreamInFlight = inFlightFromWindow ?? aiStreamInFlight;
+    setAiGenerating(aiStreamInFlight);
+  }, []);
+
+  useEffect(() => {
+    function onStreamStatus(e: Event) {
+      const ce = e as CustomEvent;
+      const inFlight = Boolean((ce as any)?.detail?.inFlight);
+      aiStreamInFlight = inFlight;
+      setAiGenerating(inFlight);
+    }
+
+    window.addEventListener("BUGGENAI_AI_STREAM_STATUS", onStreamStatus as EventListener);
+    return () => window.removeEventListener("BUGGENAI_AI_STREAM_STATUS", onStreamStatus as EventListener);
+  }, []);
 
   const testDialogRef = useRef<HTMLDialogElement | null>(null);
 
   const [testDialogPos, setTestDialogPos] = useState<{ left: number; top: number } | null>(null);
   const dragRef = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
+  const reopenDialogRef = useRef(false);
 
   const total = tests.length;
   const safeSize = Math.max(1, pageSize);
@@ -130,6 +168,10 @@ export default function ZephyrPanel() {
       return;
     }
 
+    if (rawInput.toUpperCase() !== issueKey) {
+      setInput(issueKey);
+    }
+
     setIsLoading(true);
     setTask(null);
     setTests([]);
@@ -152,7 +194,7 @@ export default function ZephyrPanel() {
         }
       }
     } catch (e: any) {
-      setMessage({ type: "error", text: String(e?.message || e) });
+      setMessage({ type: "error", text: `Failed to load task: ${String(e?.message || e)}` });
     } finally {
       setIsLoading(false);
     }
@@ -165,7 +207,9 @@ export default function ZephyrPanel() {
     setActiveTestStepsError(null);
 
     const dlg = testDialogRef.current;
-    dlg?.show();
+    if (dlg && !dlg.open) {
+      dlg.showModal();
+    }
 
     if (dlg && !testDialogPos) {
       const r = dlg.getBoundingClientRect();
@@ -195,28 +239,42 @@ export default function ZephyrPanel() {
     setActiveTest(null);
     setActiveTestSteps(null);
     setActiveTestStepsError(null);
-    setActiveTestGenerating(false);
+    setActiveTestGenerating(generatePromptInFlight);
+    setAiGenerating(aiStreamInFlight);
+  }
+
+  function closeTestDialogPreserveState() {
+    if (testDialogRef.current?.open) testDialogRef.current.close();
   }
 
   useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      const dlg = testDialogRef.current;
-      if (!dlg || !dlg.open) return;
+    const dlg = testDialogRef.current;
+    if (!dlg) return;
 
-      const target = e.target as Node | null;
-      if (!target) return;
-      if (dlg.contains(target)) return;
-
-      closeTestDialog();
+    if (!isActive) {
+      if (dlg.open) {
+        reopenDialogRef.current = true;
+        closeTestDialogPreserveState();
+      }
+      return;
     }
 
-    window.addEventListener("pointerdown", onPointerDown);
-    return () => window.removeEventListener("pointerdown", onPointerDown);
-  }, []);
+    if (isActive && reopenDialogRef.current && activeTest) {
+      reopenDialogRef.current = false;
+      if (!dlg.open) {
+        dlg.showModal();
+      }
+    }
+  }, [isActive, activeTest]);
+
+  
 
   function beginDragTestDialog(e: React.PointerEvent<HTMLDivElement>) {
     const dlg = testDialogRef.current;
     if (!dlg || !dlg.open) return;
+
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button")) return;
 
     const rect = dlg.getBoundingClientRect();
     dragRef.current = { pointerId: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
@@ -246,18 +304,17 @@ export default function ZephyrPanel() {
     dragRef.current = null;
   }
 
+  function setGenerating(next: boolean) {
+    generatePromptInFlight = next;
+    setActiveTestGenerating(next);
+  }
+
   async function generateBugPrompt() {
-    if (!task || !activeTest) {
-      setMessage({ type: "error", text: "Please load a task and open a failed test first." });
-      return;
-    }
-
-    const status = String(activeTest.zephyrStatus || "UNKNOWN").toUpperCase();
-    if (status !== "FAIL") return;
-
-    setActiveTestGenerating(true);
+    if (!activeTest || !task) return;
 
     try {
+      setMessage(null);
+      setGenerating(true);
       const cached = stepsCacheRef.current.get(activeTest.key) || [];
       const prompt = buildAiBugPrompt(task, activeTest, cached);
       if (!prompt.trim()) throw new Error("Empty prompt");
@@ -269,7 +326,7 @@ export default function ZephyrPanel() {
     } catch (e: any) {
       setMessage({ type: "error", text: String(e?.message || e) });
     } finally {
-      setActiveTestGenerating(false);
+      setGenerating(false);
     }
   }
 
@@ -318,58 +375,60 @@ export default function ZephyrPanel() {
 
         {(tests.length > 0 || isLoading) && (
           <>
-            <table className="zephyrTable">
-              <thead>
-                <tr>
-                  <th style={{ width: 110 }}>Key</th>
-                  <th>Summary</th>
-                  <th style={{ width: 110 }}>Status</th>
-                  <th style={{ width: 54 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading
-                  ? Array.from({ length: 6 }).map((_, i) => (
-                      <tr key={`sk-${i}`}>
-                        <td>
-                          <span className="zephyrSkeleton zephyrSkeletonCell" />
-                        </td>
-                        <td>
-                          <span className="zephyrSkeleton zephyrSkeletonCell" />
-                        </td>
-                        <td>
-                          <span className="zephyrSkeleton zephyrSkeletonCell" />
-                        </td>
-                        <td>
-                          <span className="zephyrSkeleton zephyrSkeletonIcon" />
-                        </td>
-                      </tr>
-                    ))
-                  : pageItems.map((t) => {
-                      const status = String(t.zephyrStatus || "UNKNOWN");
-                      const statusClass = status.toLowerCase();
-                      return (
-                        <tr key={t.key}>
-                          <td>{t.key}</td>
-                          <td>{t.summary}</td>
-                          <td className={`zephyrStatus ${statusClass}`} title={t.zephyrError || ""}>
-                            {status}
+            <div className="zephyrTableScroll">
+              <table className="zephyrTable">
+                <thead>
+                  <tr>
+                    <th style={{ width: 110 }}>Key</th>
+                    <th>Summary</th>
+                    <th style={{ width: 110 }}>Status</th>
+                    <th style={{ width: 54 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading
+                    ? Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={`sk-${i}`}>
+                          <td>
+                            <span className="zephyrSkeleton zephyrSkeletonCell" />
                           </td>
                           <td>
-                            <button className="zephyrIconButton" type="button" onClick={() => void openTest(t)} title="View details">
-                              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-                                <path
-                                  fill="currentColor"
-                                  d="M12 5c-5.5 0-9.6 4.2-10.8 6.4a1.2 1.2 0 0 0 0 1.2C2.4 14.8 6.5 19 12 19s9.6-4.2 10.8-6.4a1.2 1.2 0 0 0 0-1.2C21.6 9.2 17.5 5 12 5Zm0 12c-4.2 0-7.6-3.2-8.7-5 1.1-1.8 4.5-5 8.7-5s7.6 3.2 8.7 5c-1.1 1.8-4.5 5-8.7 5Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
-                                />
-                              </svg>
-                            </button>
+                            <span className="zephyrSkeleton zephyrSkeletonCell" />
+                          </td>
+                          <td>
+                            <span className="zephyrSkeleton zephyrSkeletonCell" />
+                          </td>
+                          <td>
+                            <span className="zephyrSkeleton zephyrSkeletonIcon" />
                           </td>
                         </tr>
-                      );
-                    })}
-              </tbody>
-            </table>
+                      ))
+                    : pageItems.map((t) => {
+                        const status = String(t.zephyrStatus || "UNKNOWN");
+                        const statusClass = status.toLowerCase();
+                        return (
+                          <tr key={t.key}>
+                            <td>{t.key}</td>
+                            <td>{t.summary}</td>
+                            <td className={`zephyrStatus ${statusClass}`} title={t.zephyrError || ""}>
+                              {status}
+                            </td>
+                            <td>
+                              <button className="zephyrIconButton" type="button" onClick={() => void openTest(t)} title="View details">
+                                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 5c-5.5 0-9.6 4.2-10.8 6.4a1.2 1.2 0 0 0 0 1.2C2.4 14.8 6.5 19 12 19s9.6-4.2 10.8-6.4a1.2 1.2 0 0 0 0-1.2C21.6 9.2 17.5 5 12 5Zm0 12c-4.2 0-7.6-3.2-8.7-5 1.1-1.8 4.5-5 8.7-5s7.6 3.2 8.7 5c-1.1 1.8-4.5 5-8.7 5Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
+                                  />
+                                </svg>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                </tbody>
+              </table>
+            </div>
 
             <div className="zephyrPager">
               <div className="zephyrPagerLeft">
@@ -464,8 +523,14 @@ export default function ZephyrPanel() {
             <div className="zephyrDialogTitle">Test Details</div>
             <div className="zephyrSmall">{task ? `Task: ${task.key}` : ""}</div>
           </div>
-          <button className="zephyrIconButton" type="button" onClick={closeTestDialog}>
-            Close
+          <button className="zephyrIconButton" type="button" onClick={closeTestDialog} aria-label="Close">
+            <span className="srOnly">Close</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.29 19.71 2.88 18.29 9.18 12 2.88 5.71 4.29 4.29l6.3 6.31 6.3-6.31 1.41 1.42Z"
+              />
+            </svg>
           </button>
         </div>
         <div className="zephyrDialogBody">
@@ -487,11 +552,26 @@ export default function ZephyrPanel() {
             <div className="zephyrFieldLabel">Steps</div>
             <div className="zephyrSelectedList zephyrStepsWrap">
               {activeTestSteps === null ? (
-                <div className="zephyrSkeletonStack">
-                  <div className="zephyrSkeleton zephyrSkeletonLine" />
-                  <div className="zephyrSkeleton zephyrSkeletonLine" />
-                  <div className="zephyrSkeleton zephyrSkeletonLine" />
-                </div>
+                <table className="zephyrStepsTable">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 72 }}>#</th>
+                      <th>Step</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <tr key={`sk-step-${i}`}>
+                        <td className="zephyrStepsCell">
+                          <span className="zephyrSkeleton zephyrSkeletonInline" style={{ width: 18, height: 14, display: "inline-block" }} />
+                        </td>
+                        <td className="zephyrStepsCell">
+                          <span className="zephyrSkeleton zephyrSkeletonCell" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               ) : activeTestSteps.length === 0 ? (
                 <div className="zephyrSmall">No steps found.</div>
               ) : (
@@ -538,14 +618,21 @@ export default function ZephyrPanel() {
         <div className="zephyrDialogFooter">
           {String(activeTest?.zephyrStatus || "UNKNOWN").toUpperCase() === "FAIL" && (
             <>
-              <button
-                className="zephyrButton"
-                type="button"
-                onClick={() => void generateBugPrompt()}
-                disabled={!activeTest || activeTestGenerating || activeTestSteps === null || (activeTestSteps?.length ?? 0) === 0}
-              >
-                {activeTestGenerating ? "Generating..." : "Generate Bug"}
-              </button>
+              <span className={activeTestGenerating || aiGenerating ? "zephyrTooltipWrap" : undefined}>
+                <button
+                  className="zephyrButton"
+                  type="button"
+                  onClick={() => void generateBugPrompt()}
+                  disabled={!activeTest || activeTestGenerating || aiGenerating || activeTestSteps === null || (activeTestSteps?.length ?? 0) === 0}
+                >
+                  {activeTestGenerating ? "Generating..." : "Generate Bug"}
+                </button>
+                {(activeTestGenerating || aiGenerating) && (
+                  <span className="zephyrTooltip" role="tooltip">
+                    There is an in-progress bug creation. Please wait until it is completed.
+                  </span>
+                )}
+              </span>
             </>
           )}
         </div>

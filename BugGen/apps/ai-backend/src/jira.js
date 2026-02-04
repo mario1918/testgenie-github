@@ -14,6 +14,75 @@ function jiraClient() {
   });
 }
 
+let cachedBugCreateFields = null;
+let cachedBugCreateFieldsAt = 0;
+
+async function getBugCreateFields() {
+  const now = Date.now();
+  if (cachedBugCreateFields && now - cachedBugCreateFieldsAt < 10 * 60 * 1000) {
+    return cachedBugCreateFields;
+  }
+
+  const api = jiraClient();
+
+  try {
+    const res = await api.get("/rest/api/3/issue/createmeta", {
+      params: {
+        projectKeys: env.JIRA_PROJECT_KEY,
+        issuetypeNames: "Bug",
+        expand: "projects.issuetypes.fields"
+      }
+    });
+
+    const fields =
+      res?.data?.projects?.[0]?.issuetypes?.[0]?.fields ||
+      res?.data?.projects?.[0]?.issuetypes?.find((t) => String(t?.name || "").toLowerCase() === "bug")?.fields ||
+      null;
+
+    cachedBugCreateFields = fields;
+    cachedBugCreateFieldsAt = now;
+    return fields;
+  } catch (e) {
+    console.error("Failed to fetch Jira create meta fields:", e?.message);
+    return null;
+  }
+}
+
+export async function getBugReproducibilityField() {
+  const fields = await getBugCreateFields();
+  if (!fields) return null;
+
+  const normalize = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const target = normalize("Reproducibility");
+
+  const entry = Object.entries(fields).find(([, f]) => normalize(f?.name) === target);
+  if (!entry) return null;
+
+  const [fieldId, field] = entry;
+  const allowed = Array.isArray(field?.allowedValues) ? field.allowedValues : [];
+
+  const options = allowed
+    .map((v) => ({
+      id: v?.id ? String(v.id) : "",
+      value: v?.value ? String(v.value) : "",
+      name: v?.name ? String(v.name) : (v?.value ? String(v.value) : "")
+    }))
+    .filter((o) => {
+      if (!o?.name) return false;
+      const n = String(o.name).trim();
+      if (!n) return false;
+      const lower = n.toLowerCase();
+      if (lower === "-- select --" || lower === "--select--") return false;
+      if (lower.startsWith("--") && lower.includes("select")) return false;
+      return true;
+    });
+
+  return {
+    fieldId: String(fieldId),
+    options
+  };
+}
+
 export async function getPriorities() {
   const api = jiraClient();
 
@@ -27,6 +96,24 @@ export async function getPriorities() {
   } catch (e) {
     console.error("Failed to fetch priorities:", e?.message);
     return [];
+  }
+}
+
+export async function getIssueByKey(key) {
+  const api = jiraClient();
+  const issueKey = String(key || "").trim();
+  if (!issueKey) return null;
+
+  try {
+    const res = await api.get(`/rest/api/3/issue/${encodeURIComponent(issueKey)}`, {
+      params: { fields: "summary,key" }
+    });
+    const k = res?.data?.key;
+    const summary = res?.data?.fields?.summary;
+    if (!k) return null;
+    return { key: String(k), summary: String(summary || "") };
+  } catch (e) {
+    return null;
   }
 }
 
@@ -295,7 +382,7 @@ export async function searchIssues(query = "") {
   }
 }
 
-export async function createJiraBugWithOptions({ report, componentIds, parentKey, relatedToKeys, assigneeId, sprintId, jiraPriority, comment }) {
+export async function createJiraBugWithOptions({ report, componentIds, parentKey, relatedToKeys, assigneeId, sprintId, jiraPriority, jiraReproducibility, comment }) {
   const api = jiraClient();
 
   const cleanText = (v) => {
@@ -430,6 +517,19 @@ export async function createJiraBugWithOptions({ report, componentIds, parentKey
 
   if (jiraPriority) {
     payload.fields.priority = { name: jiraPriority };
+  }
+
+  if (jiraReproducibility?.fieldId && jiraReproducibility?.option) {
+    const fieldId = String(jiraReproducibility.fieldId);
+    const opt = jiraReproducibility.option;
+
+    if (opt?.id) {
+      payload.fields[fieldId] = { id: String(opt.id) };
+    } else if (opt?.value) {
+      payload.fields[fieldId] = { value: String(opt.value) };
+    } else if (opt?.name) {
+      payload.fields[fieldId] = { value: String(opt.name) };
+    }
   }
 
   console.log("Creating JIRA Bug with payload:", JSON.stringify(payload, null, 2));
