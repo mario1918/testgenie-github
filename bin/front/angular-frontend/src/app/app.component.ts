@@ -987,6 +987,14 @@ export class AppComponent implements OnInit {
     this.clearFilters();
   }
 
+  redirectToAutomation(): void {
+    window.location.href = 'http://localhost:3000/';
+  }
+
+  redirectToRaiseBug(): void {
+    window.location.href = 'http://localhost:5173/';
+  }
+
   // Migrated features methods
   openCreateTestCaseModal(): void {
     console.log('🎯 Opening Create Test Case Modal');
