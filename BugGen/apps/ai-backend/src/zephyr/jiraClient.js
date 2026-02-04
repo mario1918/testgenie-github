@@ -4,32 +4,51 @@ export class JiraClient {
     const token = Buffer.from(`${cfg.email}:${cfg.apiToken}`).toString("base64");
     this.authHeader = `Basic ${token}`;
     this.sprintFieldId = cfg.sprintFieldId;
+    this._resolvedSprintFieldId = null;
   }
 
   parseSprintName(raw) {
     if (!raw) return undefined;
 
-    if (Array.isArray(raw) && raw.length) {
-      const first = raw[0];
-      if (typeof first === "string") {
-        const m = first.match(/\bname=([^,]+)\b/);
-        return m ? m[1] : undefined;
-      }
-      if (first && typeof first === "object" && typeof first.name === "string") {
-        return first.name;
-      }
-    }
+    const parseFromString = (s) => {
+      const nameMatch = String(s).match(/\bname=([^,]+)\b/);
+      const stateMatch = String(s).match(/\bstate=([^,]+)\b/i);
+      const name = nameMatch ? nameMatch[1] : undefined;
+      const state = stateMatch ? String(stateMatch[1]).toUpperCase() : undefined;
+      return { name, state };
+    };
 
-    if (typeof raw === "string") {
-      const m = raw.match(/\bname=([^,]+)\b/);
-      return m ? m[1] : undefined;
-    }
+    const parseFromObject = (o) => {
+      if (!o || typeof o !== "object") return { name: undefined, state: undefined };
+      const name = typeof o.name === "string" ? o.name : undefined;
+      const state = typeof o.state === "string" ? String(o.state).toUpperCase() : undefined;
+      return { name, state };
+    };
 
-    if (typeof raw === "object" && raw && typeof raw.name === "string") {
-      return raw.name;
+    const candidates = Array.isArray(raw) ? raw : [raw];
+    for (const c of candidates) {
+      const parsed = typeof c === "string" ? parseFromString(c) : parseFromObject(c);
+      if (parsed.name && parsed.state === "ACTIVE") return parsed.name;
     }
 
     return undefined;
+  }
+
+  async getSprintFieldId() {
+    if (this.sprintFieldId) return this.sprintFieldId;
+    if (this._resolvedSprintFieldId !== null) return this._resolvedSprintFieldId;
+
+    try {
+      const fields = await this.request("GET", `/rest/api/3/field`);
+      const sprintField = Array.isArray(fields)
+        ? fields.find((f) => String(f?.name || "").toLowerCase() === "sprint" && typeof f?.id === "string")
+        : null;
+      this._resolvedSprintFieldId = sprintField?.id || undefined;
+      return this._resolvedSprintFieldId;
+    } catch {
+      this._resolvedSprintFieldId = undefined;
+      return this._resolvedSprintFieldId;
+    }
   }
 
   async request(method, path, body) {
@@ -53,13 +72,14 @@ export class JiraClient {
   }
 
   async getIssue(issueKey) {
-    const sprintField = this.sprintFieldId ? `,${this.sprintFieldId}` : "";
+    const sprintFieldId = await this.getSprintFieldId();
+    const sprintField = sprintFieldId ? `,${sprintFieldId}` : "";
     const data = await this.request(
       "GET",
       `/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=summary,issuetype,project,components,assignee,parent${sprintField}`
     );
 
-    const sprintName = this.sprintFieldId ? this.parseSprintName(data.fields?.[this.sprintFieldId]) : undefined;
+    const sprintName = sprintFieldId ? this.parseSprintName(data.fields?.[sprintFieldId]) : undefined;
 
     return {
       id: String(data.id ?? ""),

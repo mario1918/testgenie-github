@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { COMPONENT_ASSIGNEES_BY_COMPONENT } from "./generated/componentAssignees";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ZephyrPanel from "./ZephyrPanel";
@@ -32,6 +33,7 @@ type PromptJiraHints = {
   components: string[];
   parentKey: string;
   sprintName: string;
+  priorityName?: string;
   testCaseId: string;
 };
 
@@ -92,8 +94,23 @@ export default function App() {
   const [showSprintList, setShowSprintList] = useState(false);
   const [relatedToIssues, setRelatedToIssues] = useState<JiraIssue[]>([]);
 
+  const jiraMissingFields = useMemo(() => {
+    if (!report) return [] as string[];
+    const missing: string[] = [];
+    if (!String(report.title || "").trim()) missing.push("Title");
+    if (selectedComponents.length === 0) missing.push("Component");
+    if (!selectedAssignee) missing.push("Assignee");
+    return missing;
+  }, [report, selectedComponents, selectedAssignee, selectedJiraPriority]);
+
+  const jiraCreateTooltip = useMemo(() => {
+    if (jiraMissingFields.length === 0) return "";
+    return `Please fill the mandatory fields before creating the Jira bug: ${jiraMissingFields.join(", ")}.`;
+  }, [jiraMissingFields]);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const reportTopRef = useRef<HTMLDivElement | null>(null);
   const suppressAutoScrollRef = useRef(false);
@@ -102,9 +119,33 @@ export default function App() {
   const editableReportRef = useRef<HTMLDivElement | null>(null);
   const editableTitleRef = useRef<HTMLInputElement | null>(null);
   const lastRoutingUserSearchRef = useRef<string | null>(null);
+  const lastRoutingSprintSearchRef = useRef<string | null>(null);
+  const componentsManualOverrideRef = useRef(false);
+  const relatedToManualOverrideRef = useRef(false);
+  const assigneeManualOverrideRef = useRef(false);
+  const lastIssueResolvePrefetchRef = useRef<string>("");
+  const lastSprintResolvePrefetchRef = useRef<string>("");
   const assigneePrevRef = useRef<{ id: string; label: string } | null>(null);
   const assigneeWrapRef = useRef<HTMLDivElement | null>(null);
   const jiraSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const [headerHeight, setHeaderHeight] = useState(0);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+
+    const update = () => setHeaderHeight(Math.round(el.getBoundingClientRect().height));
+    update();
+
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   function AutoResizeEditTextarea({ value, onChange, rows }: { value: string; onChange: (v: string) => void; rows?: number }) {
     const ref = useRef<HTMLTextAreaElement | null>(null);
@@ -336,6 +377,31 @@ export default function App() {
   }, [chatMessages.length, isLoading, streamingText]);
 
   useEffect(() => {
+    if (activeTab !== "ai") return;
+    if (!isLoading) return;
+    requestAnimationFrame(() => {
+      bottomAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }, [activeTab, isLoading]);
+
+  useEffect(() => {
+    if (activeTab !== "ai") return;
+    requestAnimationFrame(() => {
+      const el = inputTextareaRef.current;
+      if (!el) return;
+
+      if (!input.trim()) {
+        setInputHeight(DEFAULT_INPUT_HEIGHT);
+        return;
+      }
+
+      const needed = el.scrollHeight;
+      const clamped = Math.max(DEFAULT_INPUT_HEIGHT, Math.min(260, needed));
+      setInputHeight(clamped);
+    });
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!isLoading) {
       streamingAutoScrollRef.current = true;
       return;
@@ -347,6 +413,15 @@ export default function App() {
 
     el.scrollTop = el.scrollHeight;
   }, [streamingText, isLoading]);
+
+  useEffect(() => {
+    (window as any).__BUGGENAI_AI_STREAM_INFLIGHT = Boolean(isLoading);
+    window.dispatchEvent(
+      new CustomEvent("BUGGENAI_AI_STREAM_STATUS", {
+        detail: { inFlight: Boolean(isLoading) }
+      })
+    );
+  }, [isLoading]);
 
   function normalizeName(s: string) {
     return String(s || "")
@@ -365,7 +440,10 @@ export default function App() {
 
     const componentsRaw = lineValue(/^\s*-\s*Components\s*:\s*(.+)\s*$/mi);
     const parentKey = lineValue(/^\s*-\s*Parent\s*Key\s*:\s*(SE2-\d+)\s*$/mi);
-    const sprintName = lineValue(/^\s*-\s*Current\s*Sprint\s*:\s*(.+)\s*$/mi);
+    const sprintName =
+      lineValue(/^\s*-\s*Current\s*Sprint\s*:\s*(.+)\s*$/mi) ||
+      lineValue(/^\s*-\s*Sprint\s*:\s*(.+)\s*$/mi);
+    const priorityName = lineValue(/^\s*-\s*Priority\s*:\s*(.+)\s*$/mi);
     const testCaseId = lineValue(/^\s*-\s*Test\s*Case\s*ID\s*:\s*(SE2-\d+)\s*$/mi);
 
     const components = componentsRaw
@@ -375,7 +453,51 @@ export default function App() {
           .filter(Boolean)
       : [];
 
-    return { components, parentKey, sprintName, testCaseId };
+    return { components, parentKey, sprintName, priorityName, testCaseId };
+  }
+
+  function normalizePriorityName(value: string) {
+    const v = String(value || "").trim().toLowerCase();
+    if (!v) return "";
+
+    if (v.includes("block")) return "Blocker";
+    if (v.includes("critical") || v === "crit" || v === "p0") return "Critical";
+    if (v.includes("major") || v === "high" || v === "p1") return "Major";
+    if (v.includes("minor") || v === "medium" || v === "p2") return "Minor";
+    if (v.includes("trivial") || v === "low" || v === "p3") return "Trivial";
+    return "";
+  }
+
+  function inferPriorityFromText(text: string) {
+    const t = normalizeName(text);
+    if (!t) return "Minor";
+
+    const has = (re: RegExp) => re.test(t);
+
+    if (
+      has(/\bblock(er|ing)?\b/) ||
+      has(/\bcan\s*not\b/) ||
+      has(/\bcannot\b/) ||
+      has(/\bunable\b/) ||
+      has(/\bwon't\s+work\b/) ||
+      has(/\bstuck\b/) ||
+      has(/\bhang\b/) ||
+      has(/\bfreez(e|es|ing)\b/) ||
+      has(/\bcrash\b/) ||
+      has(/\bdata\s+loss\b/) ||
+      has(/\bsecurity\b/) ||
+      has(/\bproduction\b/) ||
+      has(/\boutage\b/)
+    ) {
+      return "Blocker";
+    }
+
+    if (has(/\bcritical\b/) || has(/\bsev\s*1\b/) || has(/\bp0\b/)) return "Critical";
+    if (has(/\bmajor\b/) || has(/\bsev\s*2\b/) || has(/\bp1\b/) || has(/\bfails?\b/) || has(/\berror\b/)) return "Major";
+    if (has(/\bminor\b/) || has(/\bsev\s*3\b/) || has(/\bp2\b/)) return "Minor";
+    if (has(/\btrivial\b/) || has(/\bcosmetic\b/) || has(/\btypo\b/) || has(/\bp3\b/)) return "Trivial";
+
+    return "Minor";
   }
 
   function getRoutingText() {
@@ -394,10 +516,10 @@ export default function App() {
     const text = getRoutingText();
 
     // Do not override if user already chose values
-    const canSetAssignee = !selectedAssignee && !isAssigneeEditing && !assigneeSearch.trim();
-    const canSetComponents = selectedComponents.length === 0;
+    const canSetAssignee = !selectedAssignee && !isAssigneeEditing && !assigneeSearch.trim() && !assigneeManualOverrideRef.current;
+    const canSetComponents = selectedComponents.length === 0 && !componentsManualOverrideRef.current;
     const canSetParent = !selectedParent.trim();
-    const canSetRelatedTo = selectedRelatedToKeys.length === 0;
+    const canSetRelatedTo = selectedRelatedToKeys.length === 0 && !relatedToManualOverrideRef.current;
     const canSetSprint = !selectedSprint.trim();
 
     let promptSetComponents = false;
@@ -406,10 +528,25 @@ export default function App() {
     let promptSetSprint = false;
 
     if (canSetComponents && promptJiraHints.components.length > 0) {
+      const findComponent = (name: string) => {
+        const target = normalizeName(name);
+        return (
+          jiraComponents.find((c) => normalizeName(c.name) === target) ||
+          jiraComponents.find((c) => normalizeName(c.name).includes(target)) ||
+          jiraComponents.find((c) => target.includes(normalizeName(c.name)))
+        );
+      };
+
+      const seen = new Set<string>();
       const comps = promptJiraHints.components
-        .map((name) => jiraComponents.find((c) => normalizeName(c.name) === normalizeName(name)))
+        .map((name) => findComponent(name))
         .filter(Boolean)
-        .map((c: any) => ({ id: c.id, name: c.name }));
+        .map((c: any) => ({ id: c.id, name: c.name }))
+        .filter((c) => {
+          if (!c?.id || seen.has(String(c.id))) return false;
+          seen.add(String(c.id));
+          return true;
+        });
 
       if (comps.length > 0) {
         setSelectedComponents(comps);
@@ -426,14 +563,23 @@ export default function App() {
       promptSetParent = true;
     }
 
-    if (canSetSprint && promptJiraHints.sprintName && jiraSprints.length > 0) {
+    if (canSetSprint && promptJiraHints.sprintName) {
       const target = normalizeName(promptJiraHints.sprintName);
       const sprint =
         jiraSprints.find((s) => normalizeName(s.name) === target) ||
         jiraSprints.find((s) => normalizeName(s.name).includes(target));
       if (sprint?.id) {
         setSelectedSprint(String(sprint.id));
+        setSprintSearch(String(sprint.name || promptJiraHints.sprintName));
+        setShowSprintList(false);
         promptSetSprint = true;
+        lastRoutingSprintSearchRef.current = null;
+      } else {
+        setSprintSearch(promptJiraHints.sprintName);
+        if (lastRoutingSprintSearchRef.current !== promptJiraHints.sprintName) {
+          lastRoutingSprintSearchRef.current = promptJiraHints.sprintName;
+          searchSprints(promptJiraHints.sprintName);
+        }
       }
     }
 
@@ -453,17 +599,37 @@ export default function App() {
     let assigneeName: string | null = null;
     let componentNames: string[] = [];
 
+    if (promptJiraHints.components.length > 0) {
+      const normalizedLookup = Object.entries(COMPONENT_ASSIGNEES_BY_COMPONENT).reduce(
+        (acc, [component, assignee]) => {
+          acc[normalizeName(component)] = String(assignee || "").trim();
+          return acc;
+        },
+        {} as Record<string, string>
+      );
+
+      for (const c of promptJiraHints.components) {
+        const hit = normalizedLookup[normalizeName(c)];
+        if (hit) {
+          assigneeName = hit;
+          break;
+        }
+      }
+    }
+
+    const canUseHeuristic = promptJiraHints.components.length === 0;
+
     // Priority order to avoid overlaps
-    if (containsAny(["BOM", "ACL", "AML"])) {
+    if (!assigneeName && canUseHeuristic && containsAny(["BOM", "ACL", "AML"])) {
       assigneeName = "Ahmad Esmat";
       componentNames = ["BOM Manager", "ACL Management", "AML Management"];
-    } else if (containsAny(["supplychain", "supply chain"])) {
+    } else if (!assigneeName && canUseHeuristic && containsAny(["supplychain", "supply chain"])) {
       assigneeName = "Ahmed Ghanem";
       componentNames = ["Supply Chain"];
-    } else if (containsAny(["Alert", "Admin"])) {
+    } else if (!assigneeName && canUseHeuristic && containsAny(["Alert", "Admin"])) {
       assigneeName = "Awad Ayoub";
       componentNames = ["Admin", "Alert"];
-    } else if (containsAny(["supplier"])) {
+    } else if (!assigneeName && canUseHeuristic && containsAny(["supplier"])) {
       assigneeName = "Yasser Hosny";
       componentNames = ["Supplier"];
     }
@@ -488,11 +654,12 @@ export default function App() {
         if (lastRoutingUserSearchRef.current !== assigneeName) {
           lastRoutingUserSearchRef.current = assigneeName;
           searchAssignees(assigneeName);
+          resolveAssigneeAndSelect(assigneeName);
         }
       }
     }
 
-    if (componentNames.length > 0 && canSetComponents && !promptSetComponents) {
+    if (componentNames.length > 0 && canSetComponents && !promptSetComponents && canUseHeuristic) {
       const comps = componentNames
         .map((name) => jiraComponents.find((c) => normalizeName(c.name) === normalizeName(name)))
         .filter(Boolean)
@@ -506,10 +673,96 @@ export default function App() {
     }
   }
 
+  async function resolveIssueByKey(key: string) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/resolve-issue?key=${encodeURIComponent(key)}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const issue = data?.issue;
+      if (!issue?.key) return null;
+      return { key: String(issue.key), summary: String(issue.summary || "") } as JiraIssue;
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveSprintByName(name: string) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/resolve-sprint?name=${encodeURIComponent(name)}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const sprint = data?.sprint;
+      if (!sprint?.id) return null;
+      return { id: String(sprint.id), name: String(sprint.name || ""), state: String(sprint.state || "") } as JiraSprint;
+    } catch {
+      return null;
+    }
+  }
+
   useEffect(() => {
     applyAutoRouting();
     // Intentionally include lists + selections so routing can apply once Jira data arrives
   }, [report, submittedQuestion, jiraUsers, jiraComponents, jiraSprints, promptJiraHints]);
+
+  useEffect(() => {
+    const keys = [promptJiraHints.testCaseId, promptJiraHints.parentKey].filter(Boolean) as string[];
+    if (keys.length === 0) return;
+
+    const signature = keys.join("|");
+    if (lastIssueResolvePrefetchRef.current === signature) return;
+    lastIssueResolvePrefetchRef.current = signature;
+
+    (async () => {
+      try {
+        const resolved = await Promise.all(Array.from(new Set(keys)).map((k) => resolveIssueByKey(k)));
+        const issues = resolved.filter(Boolean) as JiraIssue[];
+        if (issues.length === 0) return;
+
+        setJiraIssues((prev) => {
+          const seen = new Set(prev.map((i) => i.key));
+          const merged = [...prev];
+          for (const i of issues) {
+            if (!i?.key || seen.has(i.key)) continue;
+            seen.add(i.key);
+            merged.push(i);
+          }
+          return merged;
+        });
+
+        setRelatedToIssues((prev) => {
+          const seen = new Set(prev.map((i) => i.key));
+          const merged = [...prev];
+          for (const i of issues) {
+            if (!i?.key || seen.has(i.key)) continue;
+            seen.add(i.key);
+            merged.push(i);
+          }
+          return merged;
+        });
+      } catch {
+        // Ignore resolver errors; user can still search manually.
+      }
+    })();
+  }, [promptJiraHints.testCaseId, promptJiraHints.parentKey]);
+
+  useEffect(() => {
+    const name = String(promptJiraHints.sprintName || "").trim();
+    if (!name) return;
+
+    if (lastSprintResolvePrefetchRef.current === name) return;
+    lastSprintResolvePrefetchRef.current = name;
+
+    (async () => {
+      const sprint = await resolveSprintByName(name);
+      if (!sprint?.id) return;
+
+      setJiraSprints((prev) => {
+        const seen = new Set(prev.map((s) => String(s.id)));
+        if (seen.has(String(sprint.id))) return prev;
+        return [sprint, ...prev];
+      });
+    })();
+  }, [promptJiraHints.sprintName]);
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
@@ -587,6 +840,25 @@ export default function App() {
     }
   }
 
+  async function resolveAssigneeAndSelect(name: string) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/jira/resolve-assignee?name=${encodeURIComponent(name)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const user = data?.user;
+      if (user?.accountId) {
+        setSelectedAssignee(String(user.accountId));
+        setSelectedAssigneeLabel(String(user.displayName || ""));
+        setAssigneeSearch("");
+        setShowAssigneeList(false);
+        setIsAssigneeEditing(false);
+        lastRoutingUserSearchRef.current = null;
+      }
+    } catch {
+      // Ignore resolver errors; user can still select manually.
+    }
+  }
+
   async function searchComponents(query: string) {
     if (!query || query.length < 2) {
       const res = await fetch(`${API_BASE_URL}/jira/components`);
@@ -613,7 +885,12 @@ export default function App() {
   }
 
   function handleAssigneeSearchChange(value: string) {
-    if (selectedAssignee && value.trim().length > 0) {
+    if (value.trim().length === 0) {
+      assigneeManualOverrideRef.current = true;
+      setSelectedAssignee("");
+      setSelectedAssigneeLabel("");
+    } else if (selectedAssignee) {
+      assigneeManualOverrideRef.current = true;
       setSelectedAssignee("");
       setSelectedAssigneeLabel("");
     }
@@ -627,28 +904,38 @@ export default function App() {
     if (comp && !selectedComponents.find(c => c.id === value)) {
       setSelectedComponents([...selectedComponents, comp]);
     }
+    componentsManualOverrideRef.current = true;
     setComponentSearch("");
     setShowComponentList(false);
   }
 
   function removeSelectedComponent(id: string) {
-    setSelectedComponents(selectedComponents.filter(c => c.id !== id));
+    componentsManualOverrideRef.current = true;
+    setSelectedComponents((prev) => prev.filter((c) => c.id !== id));
   }
 
   function handleSelectAssignee(value: string) {
     if (!value) {
-      setShowAssigneeList(false);
+      // Treat placeholder selection as a no-op; do not clear the current assignee.
+      // Keep the list open, and keep showing the current selection in the input.
+      setIsAssigneeEditing(false);
       return;
     }
+    assigneeManualOverrideRef.current = true;
     setSelectedAssignee(value);
     const user = jiraUsers.find((u) => u.accountId === value);
     setSelectedAssigneeLabel(user?.displayName || "");
     setAssigneeSearch("");
     setShowAssigneeList(false);
     setIsAssigneeEditing(false);
+    requestAnimationFrame(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && typeof el.blur === "function") el.blur();
+    });
   }
 
   function removeSelectedAssignee() {
+    assigneeManualOverrideRef.current = true;
     setSelectedAssignee("");
     setSelectedAssigneeLabel("");
     setAssigneeSearch("");
@@ -671,6 +958,7 @@ export default function App() {
   }
 
   function removeSelectedRelatedTo(key: string) {
+    relatedToManualOverrideRef.current = true;
     setSelectedRelatedToKeys((prev) => prev.filter((k) => k !== key));
   }
 
@@ -684,6 +972,7 @@ export default function App() {
     setIsAssigneeEditing(true);
     setAssigneeSearch("");
     setShowAssigneeList(true);
+    searchAssignees("");
   }
 
   function handleAssigneeSearchBlur() {
@@ -694,16 +983,6 @@ export default function App() {
 
       setIsAssigneeEditing(false);
       setShowAssigneeList(false);
-
-      const noNewSelection = !selectedAssignee;
-      const emptyText = !assigneeSearch.trim();
-      if (noNewSelection && emptyText) {
-        const prev = assigneePrevRef.current;
-        if (prev?.id) {
-          setSelectedAssignee(prev.id);
-          setSelectedAssigneeLabel(prev.label);
-        }
-      }
     }, 0);
   }
 
@@ -774,6 +1053,7 @@ export default function App() {
 
   function handleSelectRelatedTo(key: string) {
     if (!key) return;
+    relatedToManualOverrideRef.current = true;
     setSelectedRelatedToKeys((prev) => {
       if (prev.includes(key)) return prev;
       return [...prev, key];
@@ -881,6 +1161,38 @@ export default function App() {
   async function handleSubmit() {
     if (input.trim().length < 3 || isLoading) return;
 
+    setReport(null);
+    setDeletedReportFields({});
+    setJiraResult(null);
+    setSelectedComponents([]);
+    componentsManualOverrideRef.current = false;
+    relatedToManualOverrideRef.current = false;
+    assigneeManualOverrideRef.current = false;
+    lastIssueResolvePrefetchRef.current = "";
+    lastSprintResolvePrefetchRef.current = "";
+    setSelectedAssignee("");
+    setSelectedAssigneeLabel("");
+    setIsAssigneeEditing(false);
+    assigneePrevRef.current = null;
+    lastRoutingUserSearchRef.current = null;
+    lastRoutingSprintSearchRef.current = null;
+    setSelectedParent("");
+    setSelectedRelatedToKeys([]);
+    setSelectedSprint("");
+    setSelectedJiraPriority("");
+    setJiraComment("");
+    setComponentSearch("");
+    setAssigneeSearch("");
+    setParentSearch("");
+    setRelatedToSearch("");
+    setSprintSearch("");
+    setShowComponentList(false);
+    setShowAssigneeList(false);
+    setShowParentList(false);
+    setShowRelatedToList(false);
+    setShowSprintList(false);
+    setConversationHistory([]);
+
     setError(null);
     setToast(null);
     setIsLoading(true);
@@ -893,10 +1205,12 @@ export default function App() {
 
     const currentFiles = files;
     const description = input.trim();
+
+    setPromptJiraHints(parsePromptJiraHints(description));
+
     setSubmittedQuestion(description);
     setInput("");
     clearFiles();
-    setJiraResult(null);
 
     setChatMessages(prev => [...prev, { role: "user", content: description }]);
 
@@ -905,9 +1219,7 @@ export default function App() {
       form.append("description", description);
       currentFiles.forEach((f) => form.append("images", f));
       
-      if (conversationHistory.length > 0) {
-        form.append("conversationHistory", JSON.stringify(conversationHistory));
-      }
+      
 
       const res = await fetch(`${API_BASE_URL}/generate-stream`, {
         method: "POST",
@@ -969,18 +1281,19 @@ export default function App() {
       }
 
       if (finalReport) {
-        setConversationHistory(prev => [
-          ...prev,
-          { role: "user", content: description },
-          { role: "assistant", content: JSON.stringify(finalReport) }
-        ]);
-        
-        setChatMessages(prev => [...prev, { role: "assistant", content: "", report: finalReport }]);
         setReport(finalReport);
+        setChatMessages(prev => [...prev, { role: "assistant", content: accumulatedText, report: finalReport }]);
         setStreamingText("");
 
-        if (!selectedJiraPriority && finalReport.jiraPriority) {
-          setSelectedJiraPriority(finalReport.jiraPriority);
+        if (!selectedJiraPriority) {
+          const fromReport = normalizePriorityName((finalReport as any)?.jiraPriority);
+          const fromPrompt = normalizePriorityName(promptJiraHints?.priorityName || "");
+          const inferred = inferPriorityFromText(
+            [submittedQuestion, (finalReport as any)?.title, (finalReport as any)?.description, (finalReport as any)?.impact]
+              .filter(Boolean)
+              .join("\n")
+          );
+          setSelectedJiraPriority(fromReport || fromPrompt || inferred);
         }
 
         suppressAutoScrollRef.current = true;
@@ -1013,6 +1326,21 @@ export default function App() {
         showErrorToast(
           "Unable to connect to AI. Please check the backend server/VPN and try again."
         );
+
+        setInput(description);
+        requestAnimationFrame(() => {
+          const el = inputTextareaRef.current;
+          if (!el) return;
+          const needed = el.scrollHeight;
+          const clamped = Math.max(DEFAULT_INPUT_HEIGHT, Math.min(260, needed));
+          setInputHeight(clamped);
+        });
+        setSubmittedQuestion(null);
+        setChatMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "user" && last.content === description) return prev.slice(0, -1);
+          return prev;
+        });
       } else {
         setError(e?.message || "Unexpected error");
       }
@@ -1048,6 +1376,16 @@ export default function App() {
 
   async function handleUploadToJira() {
     if (!report || jiraLoading) return;
+
+    const missing: string[] = [];
+    if (!String(report.title || "").trim()) missing.push("Title");
+    if (selectedComponents.length === 0) missing.push("Component");
+    if (!selectedAssignee) missing.push("Assignee");
+
+    if (missing.length > 0) {
+      setError(`Please fill required fields: ${missing.join(", ")}.`);
+      return;
+    }
 
     setJiraLoading(true);
     setError(null);
@@ -1141,7 +1479,7 @@ export default function App() {
       return (
         <div className="reportContent editable" ref={editableReportRef}>
           <div className="editableField">
-            <label>Title</label>
+            <label>Title *</label>
             <input
               type="text"
               className="editInput"
@@ -1417,35 +1755,29 @@ export default function App() {
 
   return (
     <div className="app">
-      {toast && (
-        <div className="toast toastError" role="status" aria-live="polite">
-          <div className="toastText">{toast.message}</div>
-          <button
-            type="button"
-            className="toastClose"
-            onClick={() => setToast(null)}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      <div className="header">
+      <div className="header" ref={headerRef}>
         <h1 className="headerBrand">
-          <svg className="headerBrandIcon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BugGenAI">
-            <path d="M12 2.5 L19 6.5 V17.5 L12 21.5 L5 17.5 V6.5 Z" fill="#2f6fed" />
-            <circle cx="12" cy="8" r="1.6" stroke="#0F172A" strokeWidth="1.8" fill="none" />
-            <ellipse cx="12" cy="13" rx="3" ry="4.2" stroke="#0F172A" strokeWidth="1.8" fill="none" />
-            <path d="M9 11 L7.5 10" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M9 13 L7.3 13" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M9 15 L7.5 16" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M15 11 L16.5 10" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M15 13 L16.7 13" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M15 15 L16.5 16" stroke="#0F172A" strokeWidth="1.4" strokeLinecap="round" />
-            <path d="M10.5 12 C11 11, 13 11, 13.5 12 C14 13, 13 14.5, 12 15 C11 14.5, 10 13, 10.5 12" stroke="#22D3EE" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx="11.2" cy="12.3" r="0.7" fill="#22D3EE" />
-            <circle cx="12.8" cy="12.1" r="0.7" fill="#22D3EE" />
-            <circle cx="12" cy="14.2" r="0.7" fill="#22D3EE" />
+          <svg
+            className="headerBrandIcon"
+            width="28"
+            height="28"
+            viewBox="0 0 512 512"
+            xmlns="http://www.w3.org/2000/svg"
+            role="img"
+            aria-label="BugGenAI"
+          >
+            <path
+              fill="#2f6fed"
+              d="M0,256.006C0,397.402,114.606,512.004,255.996,512C397.394,512.004,512,397.402,512,256.006 C512.009,114.61,397.394,0,255.996,0C114.606,0,0,114.614,0,256.006z"
+            />
+            <path
+              fill="#1e5fbf"
+              d="M508.474,298.224c-0.372-0.479-0.773-0.925-1.279-1.279 c-0.413-0.585-111.022-111.199-111.612-111.612c-1.154-1.633-2.992-2.746-5.184-2.746c-1.014,0-1.939,0.3-2.791,0.738 c-0.249-0.247-0.582-0.383-0.868-0.586c-0.417-0.585-0.903-1.073-1.489-1.489c-0.415-0.583-72.334-72.502-72.918-72.918 c-1.161-1.632-2.973-2.765-5.126-2.765c-14.065,0-25.489,10.378-25.953,23.266c-7.852-2.547-16.345-4.002-25.252-4.002 c-6.419,0-12.515,0.977-18.419,2.352c-0.086-0.077-0.19-0.133-0.277-0.207c-0.491-0.503-11.371-11.441-11.905-11.905 c-0.491-0.506-0.954-1.023-1.488-1.488c-4.749-4.878-11.545-8.014-19.198-8.014c-3.534,0-6.4,2.863-6.4,6.401 c0,2.154,1.133,3.965,2.763,5.125c0.415,0.583,15.451,17.798,15.362,18.002c-18.596,10.662-30.837,28.607-30.837,48.916 c0,4.753,0.741,9.487,2.123,14.148c-8.951,5.972-16.738,14.383-22.319,25.76c-0.4-0.542-36.542-36.688-37.132-37.099 c-0.413-0.586-0.898-1.077-1.488-1.489c-1.154-1.633-2.992-2.746-5.184-2.746c-3.535,0-6.4,3.02-6.4,6.556 c0,16.791,7.279,32.116,18.951,42.455c0.509,0.487,0.962,1.023,1.489,1.489c0.507,0.485,21.329,21.403,21.606,21.657 c-0.276,3.31-0.449,6.737-0.449,10.354c0,2.567,0.091,5.156,0.223,7.75c-0.133,0.073-0.283,0.076-0.413,0.156l-12.588,7.863 c-11.035,6.895-19.038,17.863-22.535,30.895l-6.067,22.612c-0.721,2.688,0.422,5.382,2.59,6.875 c0.418,0.571,29.924,29.946,30.001,30.039c-0.37,2.182-0.81,4.367-0.81,6.542v22.201c0,2.154,1.133,3.965,2.763,5.125 c0.415,0.583,105.073,105.243,105.658,105.659c0.325,0.459,0.739,0.814,1.166,1.164 C383.443,511.599,488.383,419.263,508.474,298.224z"
+            />
+            <path
+              fill="#eef6ff"
+              d="M396.8,189.143v-0.313c0-3.537-2.866-6.244-6.4-6.244s-6.4,3.019-6.4,6.556 c0,20.612-14.01,38.387-33.315,42.269c-0.235,0.047-0.413,0.196-0.636,0.267c-5.478-15.6-14.86-26.238-25.771-33.518 c1.382-4.661,2.123-9.395,2.123-14.149c0-20.347-12.283-38.324-30.939-48.979c-0.082-0.18-0.083-0.377-0.182-0.551 c-0.871-1.525-1.312-3.156-1.312-4.857c0-6.206,5.94-11.257,13.241-11.257c3.534,0,6.4-2.863,6.4-6.4s-2.866-6.4-6.4-6.4 c-14.066,0-25.49,10.375-25.954,23.266c-7.851-2.548-16.345-4.003-25.252-4.003c-8.938,0-17.458,1.462-25.331,4.028 c-0.449-12.9-11.882-23.29-25.956-23.29c-3.534,0-6.4,2.863-6.4,6.4c0,3.537,2.866,6.4,6.4,6.4c7.3,0,13.241,5.05,13.241,11.257 c0,1.7-0.441,3.331-1.31,4.85c-0.113,0.197-0.117,0.417-0.206,0.622c-18.597,10.662-30.837,28.607-30.837,48.915 c0,4.754,0.74,9.488,2.123,14.149c-10.912,7.28-20.293,17.918-25.771,33.518c-0.223-0.071-0.401-0.221-0.636-0.267 c-19.307-3.882-33.315-21.657-33.315-42.269v-0.313c0-3.537-2.866-6.244-6.4-6.244c-3.534,0-6.4,3.019-6.4,6.556 c0,26.645,18.278,49.66,43.472,54.789c-1.213,6.372-1.872,13.405-1.872,21.167c0,2.567,0.091,5.155,0.222,7.75 c-0.133,0.071-0.283,0.075-0.413,0.156l-12.588,7.862c-11.035,6.894-19.038,17.862-22.534,30.894l-6.068,22.612 c-0.915,3.412,1.109,6.918,4.522,7.838c0.556,0.15,1.116,0.219,1.663,0.219c2.825,0,5.412-1.882,6.178-4.743l6.068-22.606 c2.656-9.893,8.675-18.188,16.954-23.362l7.566-4.725c2.233,16.209,6.82,32.468,13.334,47.558l-6.466,6.629 c-11.631,10.944-18.037,23.956-18.037,36.65v22.201c0,3.537,2.866,6.4,6.4,6.4s6.4-2.863,6.4-6.4V377.83 c0-8.994,5.106-18.95,14.203-27.519l3.381-3.465c17.966,34.112,46.08,59.583,78.416,59.583c32.337,0,60.451-25.472,78.417-59.586 l3.577,3.661c8.9,8.375,14.006,18.332,14.006,27.325v22.201c0,3.537,2.866,6.4,6.4,6.4c3.534,0,6.4-2.863,6.4-6.4v-22.201 c0-12.693-6.406-25.707-17.841-36.457l-6.662-6.825c6.515-15.09,11.102-31.348,13.334-47.557l7.566,4.725 c8.278,5.175,14.297,13.469,16.954,23.356l6.068,22.612c0.766,2.863,3.354,4.743,6.178,4.743c0.547,0,1.106-0.068,1.663-0.219 c3.412-0.918,5.438-4.425,4.522-7.838l-6.068-22.619c-3.497-13.025-11.5-23.994-22.534-30.887l-12.588-7.862 c-0.13-0.081-0.279-0.084-0.413-0.156c0.131-2.595,0.222-5.184,0.222-7.75c0-7.762-0.659-14.795-1.872-21.167 C378.522,238.803,396.8,215.789,396.8,189.143z M198.4,184.013c0-25.575,25.841-46.381,57.6-46.381s57.6,20.806,57.6,46.381 c0,2.606-0.331,5.222-0.901,7.822c-21.213-9.374-44.823-9.403-56.699-9.403c-11.875,0-35.486,0.03-56.699,9.403 C198.731,189.234,198.4,186.619,198.4,184.013z M169.6,265.1c0-25.326,7.405-43.231,22.975-54.601l0.037,0.087l6.156-3.325 c12.756-6.877,29.479-10.922,48.739-11.833c0.684-0.026,1.401-0.03,2.092-0.049v197.781C204.755,387.274,169.6,320.697,169.6,265.1z M262.4,393.163V195.381c0.692,0.019,1.409,0.023,2.092,0.049c19.26,0.911,35.983,4.956,48.739,11.833l6.156,3.325l0.037-0.087 c15.571,11.369,22.976,29.274,22.976,54.599C342.4,320.697,307.245,387.274,262.4,393.163z"
+            />
           </svg>
           BugGenAI
         </h1>
@@ -1469,16 +1801,54 @@ export default function App() {
             Bug AI Generator
           </button>
         </div>
-        {activeTab === "ai" && report && (
-          <button className="newConversationButton" onClick={startNewConversation}>
-            + New Report
-          </button>
-        )}
+        <div className="headerRight">
+          {activeTab === "ai" && report && (
+            <button className="newConversationButton" onClick={startNewConversation}>
+              + New Report
+            </button>
+          )}
+          <div className="aiPoweredBadge" aria-label="AI-Powered">
+            <svg className="aiPoweredIcon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M12 2l1.1 3.8L17 7l-3.9 1.2L12 12l-1.1-3.8L7 7l3.9-1.2L12 2Zm7 7 1 2.7L23 12l-3 1.3L19 16l-1-2.7L15 12l3-1.3L19 9ZM6 13l1.2 3.4L11 18l-3.8 1.6L6 23l-1.2-3.4L1 18l3.8-1.6L6 13Z"
+              />
+            </svg>
+            <span className="aiPoweredText">AI-Powered</span>
+          </div>
+        </div>
       </div>
 
+      {toast && (
+        <div
+          className="toast toastError"
+          role="status"
+          aria-live="polite"
+          style={{ top: Math.max(16, headerHeight + 12) }}
+        >
+          <div className="toastText">{toast.message}</div>
+          <button
+            type="button"
+            className="toastClose"
+            onClick={() => setToast(null)}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="mainArea">
-        <div className="zephyrFrameWrap" style={{ display: activeTab === "zephyr" ? "block" : "none" }}>
-          <ZephyrPanel />
+        <div
+          className="zephyrFrameWrap"
+          aria-hidden={activeTab !== "zephyr"}
+          style={
+            activeTab === "zephyr"
+              ? { display: "block" }
+              : { position: "absolute", width: 0, height: 0, overflow: "hidden", padding: 0, border: "none" }
+          }
+        >
+          <ZephyrPanel isActive={activeTab === "zephyr"} />
         </div>
 
         <div className="resultArea" style={{ display: activeTab === "ai" ? "block" : "none" }}>
@@ -1501,7 +1871,7 @@ export default function App() {
 
                         <div className="jiraOptions">
                           <div className="jiraOption">
-                            <label>Component *</label>
+                            <label>Components *</label>
                             <input
                               type="text"
                               className="searchInput"
@@ -1558,6 +1928,11 @@ export default function App() {
                                 className="searchableSelect"
                               >
                                 <option value="">-- Select Assignee --</option>
+                                {selectedAssignee && !jiraUsers.some((u) => u.accountId === selectedAssignee) && (
+                                  <option value={selectedAssignee}>
+                                    {selectedAssigneeLabel || selectedAssignee}
+                                  </option>
+                                )}
                                 {jiraUsers.map((u) => (
                                   <option key={u.accountId} value={u.accountId}>{u.displayName}</option>
                                 ))}
@@ -1679,13 +2054,22 @@ export default function App() {
                           </div>
                         </div>
 
-                        <button
-                          className="jiraButton"
-                          onClick={handleUploadToJira}
-                          disabled={jiraLoading || selectedComponents.length === 0 || !selectedAssignee || !selectedJiraPriority}
-                        >
-                          {jiraLoading ? "Creating..." : "Create JIRA Bug"}
-                        </button>
+                        <div className="jiraButtonRow">
+                          <span className={jiraLoading || jiraMissingFields.length > 0 ? "zephyrTooltipWrap" : undefined}>
+                            <button
+                              className="jiraButton"
+                              onClick={handleUploadToJira}
+                              disabled={jiraLoading || jiraMissingFields.length > 0}
+                            >
+                              {jiraLoading ? "Creating..." : "Create JIRA Bug"}
+                            </button>
+                            {(jiraLoading || jiraMissingFields.length > 0) && jiraCreateTooltip && (
+                              <span className="zephyrTooltip" role="tooltip">
+                                {jiraCreateTooltip}
+                              </span>
+                            )}
+                          </span>
+                        </div>
                       </div>
                     )}
 
@@ -1800,7 +2184,14 @@ export default function App() {
                 onClick={handleSubmit}
                 disabled={isLoading || input.trim().length < 3}
               >
-                {isLoading ? "..." : "➤"}
+                {isLoading ? (
+                  <span className="sendButtonDots" aria-hidden="true">
+                    <span className="sendButtonDot" />
+                    <span className="sendButtonDot" />
+                  </span>
+                ) : (
+                  "➤"
+                )}
               </button>
             </div>
             <input
@@ -1821,10 +2212,11 @@ export default function App() {
 
       <footer className="globalFooter">
         <span className="footerBrand">
-          <span>BugGenAI – Powered by</span>
-          <svg className="footerLogo" width="158" height="42" viewBox="0 0 158 42" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-            <rect width="158" height="42" fill="none" />
-            <g clipPath="url(#clip0_1_42)">
+          <span>BugGenAI – Developed by</span>
+          <a className="footerLogoLink" href="https://www.siliconexpert.com/" target="_blank" rel="noreferrer noopener" aria-label="Open SiliconExpert">
+            <svg className="footerLogo" width="158" height="42" viewBox="0 0 158 42" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+              <rect width="158" height="42" fill="none" />
+              <g clipPath="url(#clip0_1_42)">
               <path d="M39.6887 17.0262C39.0735 16.2436 38.4348 15.8859 36.8636 15.8859C35.5196 15.8859 34.6536 16.3994 34.6536 17.3839C34.6536 18.6588 35.7939 19.0395 37.2965 19.151C39.4379 19.3068 41.3971 19.9106 41.3971 22.4834C41.3971 24.4294 40.0531 25.7697 37.1143 25.7697C34.7908 25.7697 33.582 25.0774 32.718 23.9141L34.062 22.9757C34.6771 23.7795 35.498 24.116 37.1378 24.116C38.664 24.116 39.575 23.5333 39.575 22.5277C39.575 21.3201 38.8462 20.8951 36.6363 20.7374C34.7222 20.6028 32.8316 19.8433 32.8316 17.405C32.8316 15.5494 34.1991 14.2284 36.9106 14.2284C38.7561 14.2284 40.1687 14.6976 41.0581 16.084L39.6906 17.0243L39.6887 17.0262Z" fill="white" />
               <path d="M43.558 10.1614H45.6093V12.1747H43.558V10.1614ZM43.6717 14.4091H45.4956V25.5909H43.6717V14.4091Z" fill="white" />
               <path d="M48.2287 10.1614H50.0527V21.7008C50.0527 22.9084 50.1212 23.9372 51.9883 23.9372V25.5909C49.1181 25.5909 48.2287 24.4736 48.2287 22.1469V10.1614Z" fill="white" />
@@ -1847,7 +2239,8 @@ export default function App() {
                 <rect width="140" height="22" transform="translate(7 9)" />
               </clipPath>
             </defs>
-          </svg>
+            </svg>
+          </a>
         </span>
       </footer>
     </div>

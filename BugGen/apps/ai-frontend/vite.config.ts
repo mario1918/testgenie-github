@@ -40,10 +40,10 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/ai-api/, "")
         },
-        "/zephyr-api": {
+        "/jira-zephyr-api": {
           target: `http://localhost:${aiBePort}`,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/zephyr-api/, "")
+          rewrite: (p) => p.replace(/^\/jira-zephyr-api/, "")
         }
       }
     }

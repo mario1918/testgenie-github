@@ -3,10 +3,10 @@ import cors from "cors";
 import multer from "multer";
 import { z } from "zod";
 
-import { capabilities, env } from "./config.js";
+import { capabilities, env, componentAssigneeLookup } from "./config.js";
 import { generateBugReportWithClaude } from "./bedrock.js";
 import { parseBugReportFromClaudeText } from "./parse.js";
-import { attachFileToIssue, createJiraBug, linkIssueToParent, getProjectComponents, searchIssues, createJiraBugWithOptions, getAssignableUsers, getSprints, getPriorities } from "./jira.js";
+import { attachFileToIssue, createJiraBug, linkIssueToParent, getProjectComponents, searchIssues, createJiraBugWithOptions, getAssignableUsers, getSprints, getPriorities, getIssueByKey, getBugReproducibilityField } from "./jira.js";
 import { JiraClient } from "./zephyr/jiraClient.js";
 import { getZephyrAdapter } from "./zephyr/zephyrAdapter.js";
 
@@ -100,13 +100,23 @@ app.get("/api/task/:issueKey", async (req, res) => {
 
     const failingTests = testsWithStatus.filter((t) => (t.zephyrStatus ?? "UNKNOWN") === "FAIL");
 
+    const filterRaw = String(process.env.ZEPHYR_TEST_CASE_FILTER || "fail").trim().toLowerCase();
+    const testFilter = filterRaw === "all" || filterRaw === "pass" || filterRaw === "fail" ? filterRaw : "fail";
+
+    const filteredTests =
+      testFilter === "all"
+        ? testsWithStatus
+        : testFilter === "pass"
+          ? testsWithStatus.filter((t) => (t.zephyrStatus ?? "UNKNOWN") === "PASS")
+          : failingTests;
+
     const statusRank = {
       FAIL: 0,
       UNKNOWN: 1,
       PASS: 2
     };
 
-    failingTests.sort((a, b) => {
+    filteredTests.sort((a, b) => {
       const ra = statusRank[a.zephyrStatus ?? "UNKNOWN"] ?? 99;
       const rb = statusRank[b.zephyrStatus ?? "UNKNOWN"] ?? 99;
       if (ra !== rb) return ra - rb;
@@ -126,7 +136,7 @@ app.get("/api/task/:issueKey", async (req, res) => {
         linkedTestsCount: linkedTests.length,
         failingTestsCount: failingTests.length
       },
-      tests: failingTests
+      tests: filteredTests
     });
   } catch (err) {
     const raw = String(err?.message ?? "");
@@ -136,6 +146,32 @@ app.get("/api/task/:issueKey", async (req, res) => {
       return;
     }
     res.status(400).json({ error: err?.message ?? "Unknown error" });
+  }
+});
+
+app.get("/jira/resolve-issue", async (req, res) => {
+  try {
+    if (!capabilities.jira) {
+      res.status(400).json({ error: "Jira is not configured" });
+      return;
+    }
+
+    const key = String(req.query.key || "").trim();
+    if (!key) {
+      res.status(400).json({ error: "key is required" });
+      return;
+    }
+
+    const issue = await getIssueByKey(key);
+    if (!issue?.key) {
+      res.status(404).json({ error: `Issue not found for '${key}'` });
+      return;
+    }
+
+    res.json({ issue });
+  } catch (err) {
+    console.error("/jira/resolve-issue failed", err?.message);
+    res.status(500).json({ error: "Failed to resolve issue" });
   }
 });
 
@@ -687,7 +723,7 @@ async function generateReport({ description, file, files, conversationHistory, p
   if (env.AI_PROVIDER === "proxy") {
     const allFiles = files && files.length > 0 ? files : (file ? [file] : []);
     const hasImage = allFiles.some(f => f?.buffer && f?.mimetype?.startsWith("image/"));
-    const isFollowUp = conversationHistory && conversationHistory.length > 0;
+    const isFollowUp = false;
     
     const system = `You are an expert senior QA engineer at SiliconExpert, a leading electronic component data and supply chain intelligence company. You write exceptionally detailed, professional Jira bug reports.
 ${isFollowUp ? `
@@ -831,16 +867,7 @@ app.post("/generate", upload.array("images", 10), async (req, res) => {
       description: req.body?.description
     });
 
-    let conversationHistory = [];
-    if (req.body?.conversationHistory) {
-      try {
-        conversationHistory = typeof req.body.conversationHistory === "string" 
-          ? JSON.parse(req.body.conversationHistory) 
-          : req.body.conversationHistory;
-      } catch (e) {
-        console.log("Failed to parse conversationHistory");
-      }
-    }
+    const conversationHistory = [];
 
     console.log("Calling AI proxy...", { isFollowUp: conversationHistory.length > 0, historyLength: conversationHistory.length });
     const report = await generateReport({
@@ -884,16 +911,7 @@ app.post("/generate-stream", upload.array("images", 10), async (req, res) => {
       description: req.body?.description
     });
 
-    let conversationHistory = [];
-    if (req.body?.conversationHistory) {
-      try {
-        conversationHistory = typeof req.body.conversationHistory === "string" 
-          ? JSON.parse(req.body.conversationHistory) 
-          : req.body.conversationHistory;
-      } catch (e) {
-        console.log("Failed to parse conversationHistory");
-      }
-    }
+    const conversationHistory = [];
 
     if (!capabilities.ai) {
       if (env.REQUIRE_BEDROCK) {
@@ -907,7 +925,7 @@ app.post("/generate-stream", upload.array("images", 10), async (req, res) => {
 
     const allFiles = req.files || [];
     const hasImage = allFiles.some(f => f?.buffer && f?.mimetype?.startsWith("image/"));
-    const isFollowUp = conversationHistory && conversationHistory.length > 0;
+    const isFollowUp = false;
 
     const system = `You are an expert senior QA engineer at SiliconExpert, a leading electronic component data and supply chain intelligence company. You write exceptionally detailed, professional Jira bug reports.
 ${isFollowUp ? `
@@ -980,11 +998,6 @@ Streaming output requirements:
     }
 
     const messages = [];
-    if (conversationHistory && conversationHistory.length > 0) {
-      conversationHistory.forEach(msg => {
-        messages.push({ role: msg.role, content: msg.content });
-      });
-    }
     messages.push({ role: "user", content: userContent });
 
     let fullText = "";
@@ -1150,6 +1163,39 @@ app.get("/jira/users", async (req, res) => {
   }
 });
 
+app.get("/jira/resolve-assignee", async (req, res) => {
+  try {
+    if (!capabilities.jira) {
+      res.status(400).json({ error: "Jira is not configured" });
+      return;
+    }
+
+    const name = String(req.query.name || "").trim();
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const normalize = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const users = await getAssignableUsers(name);
+    const target = normalize(name);
+    const user =
+      users.find((u) => normalize(u.displayName) === target) ||
+      users.find((u) => normalize(u.displayName).includes(target)) ||
+      users[0];
+
+    if (!user?.accountId) {
+      res.status(404).json({ error: `Assignee not found for '${name}'` });
+      return;
+    }
+
+    res.json({ user: { accountId: user.accountId, displayName: user.displayName } });
+  } catch (err) {
+    console.error("/jira/resolve-assignee failed", err?.message);
+    res.status(500).json({ error: "Failed to resolve assignee" });
+  }
+});
+
 app.get("/jira/sprints", async (req, res) => {
   try {
     if (!capabilities.jira) {
@@ -1162,6 +1208,40 @@ app.get("/jira/sprints", async (req, res) => {
   } catch (err) {
     console.error("/jira/sprints failed", err?.message);
     res.status(500).json({ error: "Failed to fetch sprints" });
+  }
+});
+
+app.get("/jira/resolve-sprint", async (req, res) => {
+  try {
+    if (!capabilities.jira) {
+      res.status(400).json({ error: "Jira is not configured" });
+      return;
+    }
+
+    const name = String(req.query.name || "").trim();
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+
+    const normalize = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const target = normalize(name);
+    const sprints = await getSprints("");
+
+    const sprint =
+      sprints.find((s) => normalize(s.name) === target) ||
+      sprints.find((s) => normalize(s.name).includes(target)) ||
+      sprints.find((s) => target.includes(normalize(s.name)));
+
+    if (!sprint?.id) {
+      res.status(404).json({ error: `Sprint not found for '${name}'` });
+      return;
+    }
+
+    res.json({ sprint: { id: String(sprint.id), name: String(sprint.name || ""), state: String(sprint.state || "") } });
+  } catch (err) {
+    console.error("/jira/resolve-sprint failed", err?.message);
+    res.status(500).json({ error: "Failed to resolve sprint" });
   }
 });
 
@@ -1183,24 +1263,256 @@ app.post("/jira/create", upload.array("images", 10), async (req, res) => {
 
     const parsedReport = typeof report === "string" ? JSON.parse(report) : report;
 
-    const compIds = componentIds 
+    const normalizePriority = (v) => {
+      const s = String(v || "").trim().toLowerCase();
+      if (!s) return "";
+      if (s.includes("block")) return "Blocker";
+      if (s.includes("critical") || s === "p0") return "Critical";
+      if (s.includes("major") || s === "high" || s === "p1") return "Major";
+      if (s.includes("minor") || s === "medium" || s === "p2") return "Minor";
+      if (s.includes("trivial") || s === "low" || s === "p3") return "Trivial";
+      return "";
+    };
+
+    const inferPriority = (text) => {
+      const t = String(text || "").toLowerCase();
+      const has = (re) => re.test(t);
+      if (
+        has(/\bblock(er|ing)?\b/) ||
+        has(/\bcan\s*not\b/) ||
+        has(/\bcannot\b/) ||
+        has(/\bunable\b/) ||
+        has(/\bhang\b/) ||
+        has(/\bfreez(e|es|ing)\b/) ||
+        has(/\bcrash\b/) ||
+        has(/\bdata\s+loss\b/) ||
+        has(/\bsecurity\b/) ||
+        has(/\bproduction\b/) ||
+        has(/\boutage\b/)
+      ) {
+        return "Blocker";
+      }
+      if (has(/\bcritical\b/) || has(/\bsev\s*1\b/) || has(/\bp0\b/)) return "Critical";
+      if (has(/\bmajor\b/) || has(/\bsev\s*2\b/) || has(/\bp1\b/) || has(/\bfails?\b/) || has(/\berror\b/)) return "Major";
+      if (has(/\bminor\b/) || has(/\bsev\s*3\b/) || has(/\bp2\b/)) return "Minor";
+      if (has(/\btrivial\b/) || has(/\bcosmetic\b/) || has(/\btypo\b/) || has(/\bp3\b/)) return "Trivial";
+      return "Minor";
+    };
+
+    const requestedPriority = normalizePriority(jiraPriority);
+    const reportPriority = normalizePriority(parsedReport?.jiraPriority);
+    const effectivePriority =
+      requestedPriority ||
+      reportPriority ||
+      inferPriority([parsedReport?.title, parsedReport?.description, parsedReport?.impact].filter(Boolean).join("\n"));
+
+    const resolvePriorityFromList = (desired, priorities) => {
+      const list = Array.isArray(priorities) ? priorities : [];
+      if (list.length === 0) return "";
+
+      const normalize = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const desiredNorm = normalize(desired);
+
+      const byExact = list.find((p) => normalize(p?.name) === desiredNorm);
+      if (byExact?.name) return String(byExact.name);
+
+      const byContains = list.find((p) => normalize(p?.name).includes(desiredNorm));
+      if (byContains?.name) return String(byContains.name);
+
+      const desiredBucket = normalizePriority(desired);
+      const candidatesByBucket = {
+        Blocker: ["blocker", "highest", "high"],
+        Critical: ["critical", "highest", "high"],
+        Major: ["major", "high"],
+        Minor: ["minor", "medium", "normal"],
+        Trivial: ["trivial", "low", "lowest"]
+      };
+
+      const tokens = candidatesByBucket[desiredBucket] || [];
+      for (const t of tokens) {
+        const hit = list.find((p) => normalize(p?.name) === t) || list.find((p) => normalize(p?.name).includes(t));
+        if (hit?.name) return String(hit.name);
+      }
+
+      const preferredDefaults = ["medium", "normal", "major", "high", "low"];
+      for (const d of preferredDefaults) {
+        const hit = list.find((p) => normalize(p?.name) === d) || list.find((p) => normalize(p?.name).includes(d));
+        if (hit?.name) return String(hit.name);
+      }
+
+      return String(list[0].name);
+    };
+
+    const availablePriorities = await getPriorities();
+    const jiraPriorityName = resolvePriorityFromList(effectivePriority, availablePriorities);
+
+    const normalizeReproducibility = (v) => {
+      const s = String(v || "").trim().toLowerCase();
+      if (!s) return "";
+      if (s.includes("always") || s.includes("100%") || s.includes("every")) return "Always";
+      if (s.includes("sometimes") || s.includes("intermitt") || s.includes("occasion")) return "Sometimes";
+      if (s.includes("rare") || s.includes("hard") || s.includes("sporadic") || s.includes("flaky")) return "Rarely";
+      if (s.includes("unable") || s.includes("cannot") || s.includes("can't") || s.includes("not reproduc") || s.includes("non reproduc")) {
+        return "Unable to reproduce";
+      }
+      return "";
+    };
+
+    const inferReproducibility = (text) => {
+      const t = String(text || "").toLowerCase();
+      const has = (re) => re.test(t);
+      if (has(/\b(100%|always|every\s*time|consisten(t|ly))\b/)) return "Always";
+      if (has(/\b(sometimes|intermittent|occasionally)\b/)) return "Sometimes";
+      if (has(/\b(rarely|sporadic|flaky|hard\s*to\s*reproduce)\b/)) return "Rarely";
+      if (has(/\b(unable\s*to\s*reproduce|cannot\s*reproduce|can\s*not\s*reproduce|not\s*reproducible|non\s*reproducible)\b/)) {
+        return "Unable to reproduce";
+      }
+      return "";
+    };
+
+    const resolveReproFromOptions = (desired, options) => {
+      const list = Array.isArray(options) ? options : [];
+      if (list.length === 0) return null;
+
+      const normalize = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const desiredNorm = normalize(desired);
+      if (!desiredNorm) {
+        const preferred = ["always", "sometimes", "rarely", "unable to reproduce"]; 
+        for (const p of preferred) {
+          const hit =
+            list.find((o) => normalize(o?.name) === p) ||
+            list.find((o) => normalize(o?.value) === p) ||
+            list.find((o) => normalize(o?.name).includes(p));
+          if (hit) return hit;
+        }
+        return list[0];
+      }
+
+      const byExact = list.find((o) => normalize(o?.name) === desiredNorm) || list.find((o) => normalize(o?.value) === desiredNorm);
+      if (byExact) return byExact;
+
+      const byContains = list.find((o) => normalize(o?.name).includes(desiredNorm)) || list.find((o) => normalize(o?.value).includes(desiredNorm));
+      if (byContains) return byContains;
+
+      const bucket = normalizeReproducibility(desired) || desired;
+      const bucketNorm = normalize(bucket);
+      const byBucket = list.find((o) => normalize(o?.name) === bucketNorm) || list.find((o) => normalize(o?.value) === bucketNorm);
+      if (byBucket) return byBucket;
+
+      const preferred = ["always", "sometimes", "rarely", "unable to reproduce"];
+      for (const p of preferred) {
+        const hit = list.find((o) => normalize(o?.name) === p) || list.find((o) => normalize(o?.value) === p) || list.find((o) => normalize(o?.name).includes(p));
+        if (hit) return hit;
+      }
+
+      return list[0];
+    };
+
+    const requestedRepro = normalizeReproducibility(parsedReport?.reproducibility);
+    const inferredRepro = inferReproducibility([parsedReport?.title, parsedReport?.description, parsedReport?.actualResult, parsedReport?.impact].filter(Boolean).join("\n"));
+    const effectiveRepro = requestedRepro || inferredRepro;
+
+    const reproField = await getBugReproducibilityField();
+    const reproOption = reproField?.options?.length ? resolveReproFromOptions(effectiveRepro, reproField.options) : null;
+
+    const normalize = (v) => String(v || "").trim().toLowerCase();
+    const extractComponentsFromText = (text) => {
+      const s = String(text || "");
+      const m = s.match(/(^|\n)\s*-?\s*components\s*:\s*(.+)\s*($|\n)/i);
+      if (!m?.[2]) return [];
+      return String(m[2])
+        .split(",")
+        .map((x) => String(x || "").trim())
+        .filter(Boolean);
+    };
+
+    const authoritativeComponents = extractComponentsFromText(parsedReport?.description);
+    const hasAuthoritativeComponents = authoritativeComponents.length > 0;
+
+    let compIds = componentIds
       ? (Array.isArray(componentIds) ? componentIds : [componentIds])
       : (componentId ? [componentId] : []);
+
+    let resolvedAssigneeId = assigneeId || null;
+
+    if (hasAuthoritativeComponents) {
+      const allComponents = await getProjectComponents("");
+      const findComponent = (name) => {
+        const t = normalize(name);
+        return (
+          allComponents.find((c) => normalize(c.name) === t) ||
+          allComponents.find((c) => normalize(c.name).includes(t)) ||
+          allComponents.find((c) => t.includes(normalize(c.name)))
+        );
+      };
+
+      const unknown = [];
+      const seen = new Set();
+      const resolved = authoritativeComponents
+        .map((name) => ({ name, match: findComponent(name) }))
+        .filter((x) => {
+          if (!x.match?.id) {
+            unknown.push(x.name);
+            return false;
+          }
+          const id = String(x.match.id);
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+
+      if (unknown.length > 0) {
+        res.status(400).json({
+          error: `Unknown Components in description: ${unknown.join(", ")}. Please select valid Jira components.`
+        });
+        return;
+      }
+
+      compIds = resolved.map((x) => String(x.match.id));
+
+      const lookupNormalized = Object.entries(componentAssigneeLookup || {}).reduce((acc, [comp, a]) => {
+        acc[normalize(comp)] = String(a || "").trim();
+        return acc;
+      }, {});
+
+      let assigneeName = null;
+      for (const c of authoritativeComponents) {
+        const hit = lookupNormalized[normalize(c)];
+        if (hit) {
+          assigneeName = hit;
+          break;
+        }
+      }
+
+      if (assigneeName) {
+        const users = await getAssignableUsers(assigneeName);
+        const target = normalize(assigneeName);
+        const user =
+          users.find((u) => normalize(u.displayName) === target) ||
+          users.find((u) => normalize(u.displayName).includes(target));
+
+        if (!user?.accountId) {
+          res.status(400).json({
+            error: `Could not resolve assignee '${assigneeName}' from COMPONENT_ASSIGNEES to a Jira user. Please select an Assignee.`
+          });
+          return;
+        }
+
+        resolvedAssigneeId = user.accountId;
+      } else {
+        resolvedAssigneeId = null;
+      }
+    }
 
     const issue = await createJiraBugWithOptions({
       report: parsedReport,
       componentIds: compIds,
       parentKey: parentKey || null,
-      relatedToKeys: Array.isArray(relatedToKeys)
-        ? relatedToKeys
-        : relatedToKeys
-          ? [relatedToKeys]
-          : relatedToKey
-            ? [relatedToKey]
-            : [],
-      assigneeId: assigneeId || null,
+      relatedToKeys: relatedToKeys || (relatedToKey ? [relatedToKey] : []),
+      assigneeId: resolvedAssigneeId,
       sprintId: sprintId || null,
-      jiraPriority: jiraPriority || null,
+      jiraPriority: jiraPriorityName || null,
+      jiraReproducibility: reproField?.fieldId && reproOption ? { fieldId: reproField.fieldId, option: reproOption } : null,
       comment: comment || null
     });
 

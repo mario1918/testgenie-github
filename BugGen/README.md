@@ -33,7 +33,7 @@ This repo was recently enhanced to run everything with **one frontend port** and
 During development, the frontend proxies requests to the backend:
 
 - GET/POST /ai-api/* → AI backend (path rewritten to backend)
-- GET/POST /zephyr-api/* → same backend (path rewritten to backend)
+- GET/POST /jira-zephyr-api/* → same backend (path rewritten to backend)
 - GET/POST /api/* → same backend (compatibility for Zephyr routes)
 
 This allows the frontend to run on a single port while calling a single backend.
@@ -153,7 +153,7 @@ This usually means the backend closed the connection (crash/restart) or the prox
 
 - Confirm backend is running
 - Check backend console output for errors
-- Ensure frontend proxies /api, /ai-api, /zephyr-api all point to the same backend
+- Ensure frontend proxies /api, /ai-api, /jira-zephyr-api all point to the same backend
 
 ---
 
