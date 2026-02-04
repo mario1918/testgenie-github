@@ -1,0 +1,11 @@
+
+> buggenai@1.0.0 dev:ai-backend
+> npm --prefix apps/ai-backend run dev
+
+
+> ai-bug-report-generator-backend@1.0.0 dev
+> node --watch src/index.js
+
+Restarting 'src/index.js'
+Restarting 'src/index.js'
+Backend listening on http://0.0.0.0:4000

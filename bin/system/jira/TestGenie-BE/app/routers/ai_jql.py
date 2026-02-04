@@ -372,6 +372,14 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
             logger.debug(f"Could not fetch components: {e}")
         
         try:
+            # Get sprints from Jira
+            sprint_data = await jira_service.get_all_sprints_ordered()
+            if sprint_data:
+                sprints = [s.name for s in sprint_data if s.name]
+        except Exception as e:
+            logger.debug(f"Could not fetch sprints: {e}")
+        
+        try:
             # Get statuses - use common ones if API fails
             statuses = ["Open", "In Progress", "To Do", "In QA", "Done", "Closed", "Resolved", "Blocked"]
         except:
@@ -432,11 +440,16 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
             
             # Check for sprint keyword
             elif any(w in ["sprint", "iteration", "current"] for w in words):
-                suggestions.extend([
-                    "Show issues in current sprint",
-                    "Show bugs in active sprint",
-                    "Show unresolved issues in sprint"
-                ])
+                if sprints:
+                    for sprint_name in sprints[:8]:
+                        suggestions.append(f"Show issues in sprint {sprint_name}")
+                        suggestions.append(f"Show bugs in sprint {sprint_name}")
+                else:
+                    suggestions.extend([
+                        "Show issues in current sprint",
+                        "Show bugs in active sprint",
+                        "Show unresolved issues in sprint"
+                    ])
             
             # Default: match templates with issue types
             else:
