@@ -11,8 +11,17 @@ import logging
 from app.services.jira_service import jira_service
 from app.services.ai_client import ai_client
 from app.services.field_cache import field_cache
+import time
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for suggestions data (sprints, components)
+_suggestions_cache = {
+    "components": [],
+    "sprints": [],
+    "last_updated": 0,
+    "cache_ttl": 300  # 5 minutes
+}
 
 router = APIRouter(prefix="/api/ai/jql", tags=["ai-jql"])
 
@@ -357,27 +366,33 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
         # Issue types for suggestions
         issue_types = ["bugs", "tasks", "stories", "issues", "epics"]
         
-        # Fetch real Jira data for dynamic suggestions
-        components = []
+        # Use cached Jira data for suggestions (refresh every 5 minutes)
+        global _suggestions_cache
+        current_time = time.time()
+        
+        if current_time - _suggestions_cache["last_updated"] > _suggestions_cache["cache_ttl"]:
+            # Cache expired, fetch fresh data
+            logger.info("Refreshing suggestions cache...")
+            try:
+                comp_data = await jira_service.get_project_components("SE2")
+                if comp_data:
+                    _suggestions_cache["components"] = [c.get("name", "") for c in comp_data if c.get("name")]
+            except Exception as e:
+                logger.debug(f"Could not fetch components: {e}")
+            
+            try:
+                sprint_data = await jira_service.get_all_sprints_ordered()
+                if sprint_data:
+                    _suggestions_cache["sprints"] = [s.name for s in sprint_data if s.name]
+            except Exception as e:
+                logger.debug(f"Could not fetch sprints: {e}")
+            
+            _suggestions_cache["last_updated"] = current_time
+        
+        components = _suggestions_cache["components"]
+        sprints = _suggestions_cache["sprints"]
         statuses = []
         users = []
-        sprints = []
-        
-        try:
-            # Get components from Jira
-            comp_data = await jira_service.get_project_components("SE2")
-            if comp_data:
-                components = [c.get("name", "") for c in comp_data if c.get("name")]
-        except Exception as e:
-            logger.debug(f"Could not fetch components: {e}")
-        
-        try:
-            # Get sprints from Jira
-            sprint_data = await jira_service.get_all_sprints_ordered()
-            if sprint_data:
-                sprints = [s.name for s in sprint_data if s.name]
-        except Exception as e:
-            logger.debug(f"Could not fetch sprints: {e}")
         
         try:
             # Get statuses - use common ones if API fails
@@ -401,8 +416,8 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
                 "Show unresolved issues"
             ]
         else:
-            # Check for component keyword
-            if any(w in ["component", "comp", "team"] for w in words):
+            # Check for component keyword (match partial words too)
+            if "component" in query or "comp" in query or any(w in ["team"] for w in words):
                 for comp in components[:8]:
                     suggestions.append(f"Show bugs in component {comp}")
                     suggestions.append(f"Show issues in component {comp}")
@@ -438,8 +453,8 @@ async def get_autocomplete_suggestions(request: AutocompleteSuggestionsRequest):
                     "Show issues created yesterday"
                 ])
             
-            # Check for sprint keyword
-            elif any(w in ["sprint", "iteration", "current"] for w in words):
+            # Check for sprint keyword (match partial words too)
+            elif "sprint" in query or "iteration" in query:
                 if sprints:
                     for sprint_name in sprints[:8]:
                         suggestions.append(f"Show issues in sprint {sprint_name}")
