@@ -1,3 +1,24 @@
+// Pre-load dynamic imports at module level to avoid cold start delays
+let cryptoModule = null;
+let jwtModule = null;
+
+async function preloadModules() {
+  if (!cryptoModule) {
+    cryptoModule = await import("crypto");
+  }
+  if (!jwtModule) {
+    const jwtImport = await import("jsonwebtoken");
+    jwtModule = jwtImport.default;
+  }
+  return { crypto: cryptoModule, jwt: jwtModule };
+}
+
+// Eagerly start loading modules
+const modulesPromise = preloadModules();
+
+// Export for server warm-up
+export { modulesPromise as warmupZephyrModules };
+
 function encodeRfc3986(input) {
   return encodeURIComponent(input)
     .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
@@ -19,7 +40,8 @@ function canonicalQueryStringFromUrl(url) {
 }
 
 async function computeQsh(method, pathWithQuery) {
-  const { createHash } = await import("crypto");
+  const { crypto } = await modulesPromise;
+  const { createHash } = crypto;
   const url = new URL(pathWithQuery, "https://example.invalid");
   const canonicalQuery = canonicalQueryStringFromUrl(url);
   const canonicalPath = url.pathname;
@@ -67,7 +89,7 @@ class ZephyrSquadAdapter {
   }
 
   async request(method, path) {
-    const { default: jwt } = await import("jsonwebtoken");
+    const { jwt } = await modulesPromise;
     const nowSec = Math.floor(Date.now() / 1000);
 
     const qsh = await computeQsh(method, path);

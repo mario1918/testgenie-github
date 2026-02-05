@@ -116,6 +116,8 @@ export default function App() {
   const suppressAutoScrollRef = useRef(false);
   const streamingTextRef = useRef<HTMLDivElement | null>(null);
   const streamingAutoScrollRef = useRef(true);
+  const mainAreaRef = useRef<HTMLDivElement | null>(null);
+  const mainAreaAutoScrollRef = useRef(true);
   const editableReportRef = useRef<HTMLDivElement | null>(null);
   const editableTitleRef = useRef<HTMLInputElement | null>(null);
   const lastRoutingUserSearchRef = useRef<string | null>(null);
@@ -314,9 +316,17 @@ export default function App() {
   }
 
   function scrollToBottom() {
+    if (!mainAreaAutoScrollRef.current) return;
     requestAnimationFrame(() => {
       bottomAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
+  }
+
+  function handleMainAreaScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    const threshold = 50;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+    mainAreaAutoScrollRef.current = atBottom;
   }
 
   useEffect(() => {
@@ -379,6 +389,7 @@ export default function App() {
   useEffect(() => {
     if (activeTab !== "ai") return;
     if (!isLoading) return;
+    if (!mainAreaAutoScrollRef.current) return;
     requestAnimationFrame(() => {
       bottomAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
@@ -404,6 +415,7 @@ export default function App() {
   useEffect(() => {
     if (!isLoading) {
       streamingAutoScrollRef.current = true;
+      mainAreaAutoScrollRef.current = true;
       return;
     }
 
@@ -1249,6 +1261,9 @@ export default function App() {
     setIsLoading(true);
     setStreamingText("");
     
+    // Reset auto-scroll to ensure mainArea scrolls to bottom on new submission
+    mainAreaAutoScrollRef.current = true;
+    
     if (files.length > 0) {
       setSubmittedImagePreviews(imagePreviews);
       setSubmittedFiles(files);
@@ -1890,7 +1905,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="mainArea">
+      <div className="mainArea" ref={mainAreaRef} onScroll={handleMainAreaScroll}>
         <div
           className="zephyrFrameWrap"
           aria-hidden={activeTab !== "zephyr"}

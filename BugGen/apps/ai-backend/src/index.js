@@ -8,7 +8,7 @@ import { generateBugReportWithClaude } from "./bedrock.js";
 import { parseBugReportFromClaudeText } from "./parse.js";
 import { attachFileToIssue, createJiraBug, linkIssueToParent, getProjectComponents, searchIssues, createJiraBugWithOptions, getAssignableUsers, getSprints, getPriorities, getIssueByKey, getBugReproducibilityField } from "./jira.js";
 import { JiraClient } from "./zephyr/jiraClient.js";
-import { getZephyrAdapter } from "./zephyr/zephyrAdapter.js";
+import { getZephyrAdapter, warmupZephyrModules } from "./zephyr/zephyrAdapter.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection", reason);
@@ -1543,6 +1543,19 @@ app.post("/jira/create", upload.array("images", 10), async (req, res) => {
   }
 });
 
-app.listen(env.PORT, env.HOST, () => {
-  console.log(`Backend listening on http://${env.HOST}:${env.PORT}`);
-});
+// Warm up services before accepting requests to prevent cold start 500 errors
+async function startServer() {
+  try {
+    console.log("Warming up Zephyr modules...");
+    await warmupZephyrModules;
+    console.log("Zephyr modules warmed up successfully");
+  } catch (err) {
+    console.warn("Zephyr module warm-up failed (non-fatal):", err?.message);
+  }
+
+  app.listen(env.PORT, env.HOST, () => {
+    console.log(`Backend listening on http://${env.HOST}:${env.PORT}`);
+  });
+}
+
+startServer();
