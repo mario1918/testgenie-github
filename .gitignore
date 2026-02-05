@@ -25,3 +25,6 @@ startup.log
 python.log
 frontend.log
 backend.log
+ai-automation.log
+buggen-backend.log
+buggen-frontend.log

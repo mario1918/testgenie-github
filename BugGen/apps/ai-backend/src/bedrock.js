@@ -17,16 +17,21 @@ Goal: produce a thorough, professional report that a developer can act on immedi
 
 Rules:
 - Return ONLY valid JSON (no markdown, no code fences, no additional commentary).
-- Use these keys exactly: title, stepsToReproduce, expectedResult, actualResult, severity, priority, component, environment.
+- Use these keys exactly: title, stepsToReproduce, expectedResult, actualResult, severity, jiraPriority, component, environment.
 - stepsToReproduce MUST be an array of short but specific steps.
 - If information is missing, infer reasonable details explicitly in the fields (do not leave them empty), but avoid making up product names.
 - Make the title specific (feature + symptom + condition).
+- jiraPriority is MANDATORY - you MUST analyze the bug description and assign an appropriate priority.
 
 Severity guidance:
 - Blocker/Critical/Major/Minor/Trivial
 
-Priority guidance:
-- Highest/High/Medium/Low/Lowest
+jiraPriority - REQUIRED field, analyze the bug and choose ONE of these exact values:
+- "Blocker" - System crash, data loss, security breach, complete feature unavailable, blocks all testing/work
+- "Critical" - Major feature broken, no workaround, affects many users, production issue
+- "Major" - Feature partially broken, has workaround, significant user impact
+- "Minor" - Small issue, easy workaround, limited impact (DEFAULT if unclear)
+- "Trivial" - Cosmetic issue, typo, minor UI glitch, no functional impact
 
 Bug description:
 ${description}`;

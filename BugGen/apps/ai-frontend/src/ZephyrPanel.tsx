@@ -211,11 +211,6 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
       dlg.showModal();
     }
 
-    if (dlg && !testDialogPos) {
-      const r = dlg.getBoundingClientRect();
-      setTestDialogPos({ left: r.left, top: r.top });
-    }
-
     try {
       const cached = stepsCacheRef.current.get(test.key);
       if (cached) {
@@ -239,6 +234,7 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
     setActiveTest(null);
     setActiveTestSteps(null);
     setActiveTestStepsError(null);
+    setTestDialogPos(null);
     setActiveTestGenerating(generatePromptInFlight);
     setAiGenerating(aiStreamInFlight);
   }
@@ -277,6 +273,9 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
     if (target?.closest("button")) return;
 
     const rect = dlg.getBoundingClientRect();
+    if (!testDialogPos) {
+      setTestDialogPos({ left: rect.left, top: rect.top });
+    }
     dragRef.current = { pointerId: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -352,7 +351,18 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
             disabled={isLoading}
           />
           <button className="zephyrButton" type="submit" disabled={!issueKey || isLoading}>
-            {isLoading ? "Loading..." : "Load"}
+            <span className="zephyrButtonContent" data-text="Load">
+              <span className="zephyrButtonContentInner">
+                {isLoading ? (
+                  <span className="zephyrTwoDots" aria-hidden="true">
+                    <span className="zephyrTwoDotsDot" />
+                    <span className="zephyrTwoDotsDot" />
+                  </span>
+                ) : (
+                  "Load"
+                )}
+              </span>
+            </span>
           </button>
         </form>
 
