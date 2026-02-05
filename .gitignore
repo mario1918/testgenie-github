@@ -28,3 +28,4 @@ backend.log
 ai-automation.log
 buggen-backend.log
 buggen-frontend.log
+npm-*.log
