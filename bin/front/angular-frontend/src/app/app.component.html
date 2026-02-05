@@ -87,11 +87,15 @@
                     class="form-control" 
                     id="aiSearchInput" 
                     [(ngModel)]="aiSearchInput"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    spellcheck="false"
                     placeholder="Describe what you want to find (e.g., 'Show open bugs assigned to Ahmed')"
                     (input)="onAiSearchInputChange($event)"
                     (keydown)="onAiSearchKeydown($event)"
                     (focus)="showAiSuggestions = true; selectedSuggestionIndex = -1"
-                    (blur)="hideAiSuggestionsDelayed()"
+                    (blur)="hideAiSuggestionsDelayed(); hideAiReporterSuggestionsDelayed()"
                     (keyup.enter)="generateJqlFromAi()"
                     [disabled]="isGeneratingJql">
                   <button 
@@ -104,6 +108,42 @@
                     {{ isGeneratingJql ? 'Generating...' : 'Generate JQL' }}
                   </button>
                 </div>
+
+                <!-- Reporter user picker dropdown (when typing reporter ...) -->
+                <div 
+                  *ngIf="showAiReporterSuggestions && (aiReporterSuggestions.length > 0 || isLoadingAiReporterSuggestions)" 
+                  class="position-absolute w-100 mt-1 shadow-sm rounded border bg-body"
+                  style="z-index: 1051; max-height: 250px; overflow-y: auto;">
+                  <div *ngIf="isLoadingAiReporterSuggestions" class="px-3 py-2 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    Loading users...
+                  </div>
+                  <div
+                    *ngIf="!isLoadingAiReporterSuggestions && aiReporterSuggestions.length === 1 && aiReporterSuggestions[0]?.__type === 'me'"
+                    class="px-3 py-2 cursor-pointer suggestion-item"
+                    style="cursor: pointer;"
+                    (mousedown)="selectAiReporter(aiReporterSuggestions[0])">
+                    <i class="bi bi-person-check me-2"></i>
+                    Reported by me
+                  </div>
+                  <div 
+                    *ngFor="let user of aiReporterSuggestions" 
+                    class="px-3 py-2 cursor-pointer suggestion-item"
+                    style="cursor: pointer;"
+                    (mousedown)="selectAiReporter(user)">
+                    <img
+                      *ngIf="user.avatarUrl"
+                      [src]="user.avatarUrl"
+                      alt=""
+                      width="22"
+                      height="22"
+                      class="rounded-circle me-2"
+                      referrerpolicy="no-referrer" />
+                    <i *ngIf="!user.avatarUrl" class="bi bi-person-circle me-2"></i>
+                    {{ user.displayName || user.name || user.emailAddress || 'Unknown' }}
+                  </div>
+                </div>
+
                 <!-- Autocomplete Suggestions Dropdown -->
                 <div 
                   *ngIf="showAiSuggestions && (aiSuggestions.length > 0 || isLoadingAiSuggestions)" 

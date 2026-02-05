@@ -139,7 +139,7 @@ async def search_users(params: UserSearchParams = Depends()):
     All search parameters are grouped in UserSearchParams model.
     """
     try:
-        users = await jira_service.search_users(
+        users = await jira_service.user_picker(
             query=params.query,
             max_results=params.max_results,
             show_avatar=params.show_avatar,

@@ -94,6 +94,13 @@ export class JiraService {
     return this.http.get<any[]>(`${this.apiConfig.getFullUrl('jira', 'jiraBoards')}?project_key=${this.apiConfig.jiraProjectKey}`);
   }
 
+  searchUsersPicker(query: string, maxResults: number = 10): Observable<any[]> {
+    const params = new HttpParams()
+      .set('query', query)
+      .set('max_results', String(maxResults));
+    return this.http.get<any[]>(`${this.apiConfig.jiraApiUrl}/users/picker`, { params });
+  }
+
   // Import test cases to Jira
   importTestCasesToJira(testCases: any[], options: {
     projectKey?: string;

@@ -60,6 +60,17 @@ export class AppComponent implements OnInit {
   isLoadingAiSuggestions = false;
   selectedSuggestionIndex = -1;
   private aiSuggestionsTimeout: any;
+
+  showAiReporterSuggestions = false;
+  aiReporterSuggestions: any[] = [];
+  isLoadingAiReporterSuggestions = false;
+  private aiReporterSuggestionsTimeout: any;
+  private aiReporterSearchTimeout: any;
+  selectedAiReporterAccountId: string | null = null;
+  selectedAiReporterMode: 'accountId' | 'me' | null = null;
+  aiReporterQuery = '';
+  selectedAiReporterLabel: string | null = null;
+  lockReporterPicker = false;
   
   // Data properties
   jiraIssues: JiraIssue[] = [];
@@ -356,9 +367,126 @@ export class AppComponent implements OnInit {
   // AI JQL Search Methods
   onAiSearchInputChange(event: Event): void {
     const input = (event.target as HTMLInputElement).value;
-    // Trigger debounced API call for suggestions
-    this.aiJqlService.searchSuggestions(input);
-    this.showAiSuggestions = true;
+    const mRaw = input.match(/(?:\breporter\b|\breported\s+by\b|\breborted\s+by\b)\s*[:=]?\s*([^\n]*)$/i);
+    const reporterQueryRaw = (mRaw?.[1] ?? '').trim();
+
+    // If user already selected a reporter, don't reopen the picker while they keep typing
+    // unless they edit the reporter phrase itself.
+    if (this.lockReporterPicker && mRaw) {
+      const label = (this.selectedAiReporterLabel || '').trim();
+      const isSameReporterText = label
+        ? reporterQueryRaw.toLowerCase().startsWith(label.toLowerCase())
+        : (this.selectedAiReporterMode === 'me' && /^me\b/i.test(reporterQueryRaw));
+
+      if (isSameReporterText) {
+        this.showAiReporterSuggestions = false;
+        this.aiReporterSuggestions = [];
+        this.isLoadingAiReporterSuggestions = false;
+        // Fall back to AI suggestions for any further typing.
+        this.aiJqlService.searchSuggestions(input);
+        this.showAiSuggestions = true;
+        return;
+      }
+
+      // Reporter text changed => allow picker again
+      this.lockReporterPicker = false;
+      this.selectedAiReporterMode = null;
+      this.selectedAiReporterAccountId = null;
+      this.selectedAiReporterLabel = null;
+    }
+    const reporterParts = reporterQueryRaw.split(/\s+\b(?:and|or)\b\s+/i);
+    const reporterQuery = (reporterParts[0] ?? '').trim();
+    const hasTrailingClause = reporterParts.length > 1;
+    const m = mRaw && !hasTrailingClause ? mRaw : null;
+    this.aiReporterQuery = reporterQuery;
+
+    // If user is typing reporter, show only the reporter picker dropdown
+    if (m) {
+      this.showAiSuggestions = false;
+      this.aiJqlService.clearSuggestions();
+    } else {
+      // Trigger debounced API call for suggestions
+      this.aiJqlService.searchSuggestions(input);
+      this.showAiSuggestions = true;
+    }
+
+    if (m) {
+      this.showAiReporterSuggestions = true;
+      if (this.aiReporterSearchTimeout) {
+        clearTimeout(this.aiReporterSearchTimeout);
+      }
+
+      const isMe = /^me$/i.test(reporterQuery);
+      if (isMe) {
+        this.selectedAiReporterMode = 'me';
+        this.selectedAiReporterAccountId = null;
+        this.aiReporterSuggestions = [];
+        this.isLoadingAiReporterSuggestions = false;
+        return;
+      }
+
+      if (!reporterQuery) {
+        this.aiReporterSuggestions = [{ __type: 'me' }];
+        this.isLoadingAiReporterSuggestions = false;
+        return;
+      }
+
+      this.aiReporterSearchTimeout = setTimeout(() => {
+        this.isLoadingAiReporterSuggestions = true;
+        this.jiraService.searchUsersPicker(reporterQuery, 10).subscribe({
+          next: (users) => {
+            const list = Array.isArray(users)
+              ? users
+              : (Array.isArray((users as any)?.users) ? (users as any).users : []);
+            this.aiReporterSuggestions = list;
+            this.isLoadingAiReporterSuggestions = false;
+          },
+          error: () => {
+            this.aiReporterSuggestions = [];
+            this.isLoadingAiReporterSuggestions = false;
+          }
+        });
+      }, 250);
+    } else {
+      this.showAiReporterSuggestions = false;
+      this.aiReporterSuggestions = [];
+    }
+  }
+
+  hideAiReporterSuggestionsDelayed(): void {
+    this.aiReporterSuggestionsTimeout = setTimeout(() => {
+      this.showAiReporterSuggestions = false;
+    }, 200);
+  }
+
+  selectAiReporter(user: any): void {
+    if ((user as any)?.__type === 'me') {
+      this.selectedAiReporterMode = 'me';
+      this.selectedAiReporterAccountId = null;
+      this.selectedAiReporterLabel = 'me';
+      this.lockReporterPicker = true;
+      this.showAiReporterSuggestions = false;
+      this.aiReporterSuggestions = [];
+      this.aiSearchInput = this.aiSearchInput.replace(/(?:\breporter\b|\breported\s+by\b|\breborted\s+by\b)\s*[:=]?\s*[^\n]*$/i, 'reported by me');
+      return;
+    }
+
+    const accountId = String(user?.accountId ?? user?.account_id ?? '').trim();
+    if (!accountId) {
+      return;
+    }
+
+    this.selectedAiReporterAccountId = accountId;
+    this.selectedAiReporterMode = 'accountId';
+    this.selectedAiReporterLabel = String(user?.displayName ?? user?.display_name ?? user?.name ?? user?.emailAddress ?? '').trim() || null;
+    this.lockReporterPicker = true;
+    this.showAiReporterSuggestions = false;
+    this.aiReporterSuggestions = [];
+
+    const label = String(user?.displayName ?? user?.display_name ?? user?.name ?? user?.emailAddress ?? '').trim();
+    if (label) {
+      this.aiSearchInput = this.aiSearchInput.replace(/(?:\breporter\b|\breported\s+by\b|\breborted\s+by\b)\s*[:=]?\s*[^\n]*$/i, `reported by ${label}`);
+    }
   }
 
   selectAiSuggestion(suggestion: string): void {
@@ -417,6 +545,57 @@ export class AppComponent implements OnInit {
     }, 200);
   }
 
+  private normalizeJql(jql: string): string {
+    return String(jql || '')
+      .replace(/\s+/g, ' ')
+      .replace(/\bAND\b\s+\bAND\b/gi, 'AND')
+      .replace(/\bOR\b\s+\bOR\b/gi, 'OR')
+      .replace(/^\s*(AND|OR)\b\s*/i, '')
+      .replace(/\s*\b(AND|OR)\b\s*$/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  private applyClosedStatusOverride(jql: string): string {
+    // If the user explicitly asked for "status closed", force status = "Closed"
+    if (!/\bstatus\b\s+closed\b/i.test(this.aiSearchInput || '')) {
+      return jql;
+    }
+
+    const cleaned = String(jql || '')
+      .replace(/\bstatusCategory\s*=\s*Done\b/gi, '')
+      .replace(/\bstatus\s*=\s*"?Closed"?\b/gi, '')
+      .replace(/\s+(AND|OR)\s*(?=\s+(AND|OR)\s+)/gi, ' ')
+      .trim();
+
+    const withStatus = cleaned ? `${cleaned} AND status = "Closed"` : 'status = "Closed"';
+    return this.normalizeJql(withStatus);
+  }
+
+  private applyReporterToJql(jql: string): string {
+    if (this.selectedAiReporterMode === 'me') {
+      const reporterClause = 'reporter = currentUser()';
+      const cleaned = String(jql || '')
+        .replace(/\breporter\s*(=|IN)\s*[^\n]+?(?=(\s+AND\s+|\s+OR\s+|$))/gi, '')
+        .replace(/\s+(AND|OR)\s*$/i, '')
+        .trim();
+
+      if (!cleaned) return reporterClause;
+      return this.normalizeJql(`${cleaned} AND ${reporterClause}`);
+    }
+
+    if (this.selectedAiReporterMode !== 'accountId' || !this.selectedAiReporterAccountId) return jql;
+
+    const reporterClause = `reporter = "${this.selectedAiReporterAccountId}"`;
+    const cleaned = String(jql || '')
+      .replace(/\breporter\s*(=|IN)\s*[^\n]+?(?=(\s+AND\s+|\s+OR\s+|$))/gi, '')
+      .replace(/\s+(AND|OR)\s*$/i, '')
+      .trim();
+
+    if (!cleaned) return reporterClause;
+    return this.normalizeJql(`${cleaned} AND ${reporterClause}`);
+  }
+
   generateJqlFromAi(): void {
     if (!this.aiSearchInput.trim() || this.isGeneratingJql) {
       return;
@@ -430,7 +609,8 @@ export class AppComponent implements OnInit {
       next: (response) => {
         if (response.generated_jql) {
           // Set the JQL filter field with the generated JQL
-          this.jqlFilter = response.generated_jql;
+          const withClosed = this.applyClosedStatusOverride(response.generated_jql);
+          this.jqlFilter = this.applyReporterToJql(withClosed);
           
           // Show success notification
           this.notificationService.showSuccess('JQL generated successfully!');
