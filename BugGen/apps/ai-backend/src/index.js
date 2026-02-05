@@ -782,7 +782,11 @@ Rules for EXCELLENT bug reports:
 8. **Environment**: Browser, OS, screen resolution if relevant, user role/permissions
 
 Additional fields to include:
-- **Reproducibility**: Always / Sometimes / Rarely / Unable to reproduce
+- **Reproducibility**: Infer from the bug description:
+  - "Always" (default): Bug occurs every time, consistent behavior, clear steps reproduce it reliably
+  - "Sometimes": Bug is intermittent, random, sporadic, happens occasionally, not every time
+  - "Rarely": Bug is hard to reproduce, happened once, infrequent, difficult to trigger
+  If not explicitly mentioned, default to "Always" as most reported bugs are reproducible.
 - **Workaround**: If any workaround exists, describe it
 - **Impact**: Describe business/user impact
 
@@ -842,7 +846,7 @@ Return ONLY valid JSON with these keys:
       messages
     });
 
-    return parseBugReportFromClaudeText(text);
+    return parseBugReportFromClaudeText(text, description);
   }
 
   const imageBase64 = file?.buffer ? file.buffer.toString("base64") : undefined;
@@ -854,7 +858,7 @@ Return ONLY valid JSON with these keys:
     imageMediaType
   });
 
-  return parseBugReportFromClaudeText(claudeText);
+  return parseBugReportFromClaudeText(claudeText, description);
 }
 
 app.post("/generate", upload.array("images", 10), async (req, res) => {
@@ -1033,8 +1037,8 @@ Streaming output requirements:
     const jsonText = markerMatch?.[1]?.trim();
 
     const report = jsonText
-      ? parseBugReportFromClaudeText(jsonText)
-      : parseBugReportFromClaudeText(fullText);
+      ? parseBugReportFromClaudeText(jsonText, parsedBody.description)
+      : parseBugReportFromClaudeText(fullText, parsedBody.description);
     res.write(`data: ${JSON.stringify({ type: "complete", report })}\n\n`);
     console.log("/generate-stream success", { durationMs: Date.now() - started });
     res.end();
