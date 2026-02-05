@@ -1033,7 +1033,15 @@ export class AppComponent implements OnInit {
   }
 
   redirectToAutomation(): void {
-    window.open('http://localhost:3000/', '_blank');
+    let url = 'http://localhost:3000/';
+    if (this.selectedTestCaseIds.length === 1) {
+      const selectedTestCase = this.jiraTestCases.find(tc => tc.id === this.selectedTestCaseIds[0]);
+      if (selectedTestCase?.relatedTask) {
+        url += `?taskKey=${encodeURIComponent(selectedTestCase.relatedTask)}`;
+      }
+    }
+    console.log('Opening Automation URL:', url, 'Selected IDs:', this.selectedTestCaseIds);
+    window.open(url, '_blank');
   }
 
   redirectToRaiseBug(): void {

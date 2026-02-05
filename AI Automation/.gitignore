@@ -74,6 +74,8 @@ temp/
 reports/
 *.html
 
+!src/public/index.html
+
 # VS Code workspace settings
 .vscode/settings.json
 

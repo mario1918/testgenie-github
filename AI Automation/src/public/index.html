@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA to Playwright</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* Brand Color Variables */
+    :root {
+      --brand-dark-blue: #031B3A;
+      --brand-blue: #1C3664;
+      --brand-yellow: #FCC937;
+      --brand-white: #FFFFFF;
+      --brand-black: #000000;
+      --brand-purple: #CA85FF;
+      --brand-cyan: #00A3DD;
+      --brand-green: #1ECC91;
+    }
+
+    /* Dark mode toggle via class on body: .dark-mode */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      min-height: 100vh;
+      background: #020b1f url('./images/siliconexpert-bg.jpg') center/cover fixed no-repeat;
+      color: #212529;
+    }
+
+    body.dark-mode {
+      color: #e5e7eb;
+    }
+
+    /* Header Styles */
+    .app-header {
+      background: linear-gradient(135deg,
+          rgba(3, 27, 58, 0.9) 0%,
+          rgba(28, 54, 100, 0.9) 40%,
+          rgba(0, 163, 221, 0.9) 100%);
+      color: white;
+      padding: 1.5rem 0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      margin-bottom: 2rem;
+    }
+
+    .app-header h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0;
+      color: white;
+    }
+
+    .app-header .subtitle {
+      font-size: 0.95rem;
+      opacity: 0.9;
+      margin: 0.25rem 0 0 0;
+    }
+
+    /* Card Styles */
+    .card {
+      border: 1px solid rgba(222, 226, 230, 0.8);
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+      margin-bottom: 1.5rem;
+      background-color: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(6px);
+    }
+
+    body.dark-mode .card {
+      border-color: rgba(55, 65, 81, 0.9);
+      background-color: rgba(15, 23, 42, 0.9);
+    }
+
+    .card-header {
+      background-color: rgba(28, 54, 100, 0.95);
+      color: white;
+      font-weight: 600;
+      padding: 1rem 1.25rem;
+      border-bottom: none;
+    }
+
+    body.dark-mode .card-header {
+      background-color: rgba(15, 23, 42, 0.95);
+    }
+
+    /* Form Styles */
+    .form-label {
+      font-weight: 500;
+      color: #495057;
+      margin-bottom: 0.5rem;
+    }
+
+    body.dark-mode .form-label {
+      color: #e5e7eb;
+    }
+
+    .form-control,
+    .form-select {
+      background-color: rgba(255, 255, 255, 0.95);
+    }
+
+    body.dark-mode .form-control,
+    body.dark-mode .form-select {
+      background-color: rgba(15, 23, 42, 0.95);
+      border-color: #4b5563;
+      color: #f9fafb;
+    }
+
+
+    body.dark-mode .form-control::placeholder {
+      color: #9ca3af;
+      opacity: 1;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+      border-color: var(--brand-cyan);
+      box-shadow: 0 0 0 0.2rem rgba(0, 163, 221, 0.25);
+    }
+
+    /* Buttons */
+    .btn-primary {
+      background-color: var(--brand-blue);
+      border-color: var(--brand-blue);
+      font-weight: 500;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--brand-dark-blue);
+      border-color: var(--brand-dark-blue);
+    }
+
+    .btn-outline-primary {
+      color: var(--brand-blue);
+      border-color: var(--brand-blue);
+    }
+
+    .btn-outline-primary:hover {
+      background-color: var(--brand-blue);
+      border-color: var(--brand-blue);
+      color: white;
+    }
+
+    .btn-success {
+      background-color: var(--brand-green);
+      border-color: var(--brand-green);
+    }
+
+    .btn-success:hover {
+      background-color: #19b87f;
+      border-color: #19b87f;
+    }
+
+    /* Dark mode button tweaks */
+    body.dark-mode .btn-primary {
+      background-color: var(--brand-cyan);
+      border-color: var(--brand-cyan);
+      color: #000;
+    }
+
+    body.dark-mode .btn-primary:hover {
+      background-color: var(--brand-blue);
+      border-color: var(--brand-blue);
+      color: #fff;
+    }
+
+    body #deselectAllBtn,
+    body #selectAllBtn {
+      color: #f9fafb;
+      border-color: #f9fafb;
+      background: transparent;
+    }
+
+    body #deselectAllBtn:hover,
+    body #selectAllBtn:hover {
+      background-color: #f9fafb;
+      color: #111827;
+    }
+
+
+    /* Loading Styles */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 3rem;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .loading p {
+      font-weight: 600;
+      color: var(--brand-cyan);
+    }
+
+    /* Results Section */
+    .results {
+      display: none;
+    }
+
+    .results.active {
+      display: block;
+    }
+
+    /* Test Cases Table with Scroll */
+    .test-cases-container {
+      max-height: 500px;
+      overflow-y: auto;
+      border: 1px solid rgba(222, 226, 230, 0.9);
+      border-radius: 4px;
+      background-color: rgba(248, 249, 250, 0.95);
+    }
+
+    body.dark-mode .test-cases-container {
+      border-color: rgba(55, 65, 81, 0.9);
+      background-color: rgba(15, 23, 42, 0.9);
+    }
+
+    .test-cases-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .test-cases-container::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 4px;
+    }
+
+    .test-cases-container::-webkit-scrollbar-thumb {
+      background: var(--brand-cyan);
+      border-radius: 4px;
+    }
+
+    .test-cases-container::-webkit-scrollbar-thumb:hover {
+      background: var(--brand-blue);
+    }
+
+    .table {
+      margin-bottom: 0;
+    }
+
+    .table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background-color: rgba(248, 249, 250, 0.98);
+    }
+
+    body.dark-mode .table thead {
+      background-color: #020617;
+    }
+
+    .table th {
+      font-weight: 600;
+      color: var(--brand-dark-blue);
+      border-bottom: 2px solid #dee2e6;
+    }
+
+
+
+
+    .table td {
+      vertical-align: middle;
+    }
+
+    .table tbody tr:hover {
+      background-color: rgba(248, 249, 250, 0.85);
+    }
+
+    body.dark-mode .table tbody tr:hover {
+      background-color: rgba(31, 41, 55, 0.85);
+    }
+
+    body.dark-mode .table tbody tr td,
+    body.dark-mode .table tr th {
+      color: white;
+      background-color: #0f172a;
+    }
+
+    body.dark-mode .text-brand-blue {
+      color: white !important;
+    }
+
+    .form-check-input {
+      width: 1.25rem;
+      height: 1.25rem;
+      cursor: pointer;
+    }
+
+    .form-check-input:checked {
+      background-color: var(--brand-cyan);
+      border-color: var(--brand-cyan);
+    }
+
+    /* Badge Styles */
+    .badge {
+      font-weight: 500;
+      padding: 0.4em 0.7em;
+      font-size: 0.8rem;
+    }
+
+    .badge-priority-high {
+      background-color: #dc3545;
+      color: white;
+    }
+
+    .badge-priority-medium {
+      background-color: #ffc107;
+      color: #000;
+    }
+
+    .badge-priority-low {
+      background-color: #6c757d;
+      color: white;
+    }
+
+    .badge-status {
+      background-color: var(--brand-cyan);
+      color: white;
+    }
+
+    /* Alert Styles */
+    .alert {
+      border-radius: 4px;
+      margin-bottom: 1rem;
+    }
+
+    .alert-danger {
+      background-color: rgba(220, 53, 69, 0.1);
+      border-color: #dc3545;
+      color: #721c24;
+    }
+
+    .alert-success {
+      background-color: rgba(30, 204, 145, 0.1);
+      border-color: var(--brand-green);
+      color: #0f5132;
+    }
+
+    .alert-info {
+      background-color: rgba(0, 163, 221, 0.1);
+      border-color: var(--brand-cyan);
+      color: #055160;
+    }
+
+    body.dark-mode .alert-danger {
+      background-color: rgba(220, 53, 69, 0.15);
+      color: #f8d7da;
+    }
+
+    body.dark-mode .alert-success {
+      background-color: rgba(30, 204, 145, 0.15);
+      color: #d1fae5;
+    }
+
+    body.dark-mode .alert-info {
+      background-color: rgba(0, 163, 221, 0.15);
+      color: #e0f2fe;
+    }
+
+    /* Footer Links */
+    .footer-links {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(222, 226, 230, 0.8);
+    }
+
+    body.dark-mode .footer-links {
+      border-top-color: rgba(55, 65, 81, 0.9);
+    }
+
+    .footer-links a {
+      color: var(--brand-cyan);
+      text-decoration: none;
+      margin-right: 1.5rem;
+    }
+
+    .footer-links a:hover {
+      color: var(--brand-blue);
+      text-decoration: underline;
+    }
+
+    /* Utility Classes */
+    .text-brand-blue {
+      color: var(--brand-blue) !important;
+    }
+
+    .text-brand-cyan {
+      color: var(--brand-cyan) !important;
+    }
+
+    .bg-gradient-primary {
+      background: linear-gradient(135deg, var(--brand-dark-blue) 0%, var(--brand-blue) 40%, var(--brand-cyan) 100%) !important;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="container d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center">
+        <div>
+          <h1 class="mb-0">JIRA to Playwright</h1>
+          <p class="subtitle mb-0">Generate Playwright test specifications from JIRA test cases</p>
+        </div>
+      </div>
+      <div class="d-flex align-items-center">
+        <img src="./images/siliconexpert-logo.svg" alt="SiliconExpert" style="height: 50px;" class="me-3">
+        <button id="themeToggleBtn" class="btn btn-outline-light btn-sm">
+          <i class="bi bi-moon-stars-fill me-1"></i>Dark mode
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Fetch Test Cases Card -->
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-search me-2"></i>Fetch Test Cases
+      </div>
+      <div class="card-body">
+        <div class="alert alert-danger" id="error" style="display: none;"></div>
+        <div class="alert alert-success" id="success" style="display: none;"></div>
+
+        <form id="storyForm">
+          <div class="row align-items-end">
+            <div class="col-md-8 mb-3">
+              <label for="storyId" class="form-label">JIRA Story ID</label>
+              <input type="text" class="form-control" id="storyId" placeholder="e.g., SE2-56471" required />
+            </div>
+            <div class="col-md-4 mb-3">
+              <button type="submit" class="btn btn-primary w-100" id="submitBtn">
+                <i class="bi bi-download me-2"></i>Fetch Test Cases
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div class="loading" id="loading">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-3">Fetching test cases from JIRA...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Card -->
+    <div class="results" id="results">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-list-check me-2"></i>Test Cases Found</span>
+          <div>
+            <button type="button" class="btn btn-sm btn-light me-2" id="selectAllBtn">
+              <i class="bi bi-check-all me-1"></i>Select All
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-light" id="deselectAllBtn">
+              <i class="bi bi-x-lg me-1"></i>Deselect All
+            </button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="test-cases-container">
+            <table class="table table-hover mb-0" id="testCasesTable">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">
+                    <input type="checkbox" class="form-check-input" id="selectAllCheckbox">
+                  </th>
+                  <th style="width: 150px;">ID</th>
+                  <th>Name</th>
+                  <th style="width: 120px;">Priority</th>
+                  <th style="width: 120px;">Status</th>
+                </tr>
+              </thead>
+              <tbody id="testCasesList"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-body">
+          <button type="button" class="btn btn-success w-100" id="generatePromptBtn">
+            <i class="bi bi-file-earmark-code me-2"></i>Generate Prompt File
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer Links -->
+    <div class="footer-links text-center">
+      <a href="/health" target="_blank"><i class="bi bi-heart-pulse me-1"></i>Health Check</a>
+      <a href="/api/info" target="_blank"><i class="bi bi-info-circle me-1"></i>API Info</a>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const form = document.getElementById('storyForm');
+    const loading = document.getElementById('loading');
+    const results = document.getElementById('results');
+    const testCasesList = document.getElementById('testCasesList');
+    const errorDiv = document.getElementById('error');
+    const successDiv = document.getElementById('success');
+    const submitBtn = document.getElementById('submitBtn');
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const deselectAllBtn = document.getElementById('deselectAllBtn');
+    const generatePromptBtn = document.getElementById('generatePromptBtn');
+
+    // URL param (?taskKey=SE2-123) support: auto-fill + auto-submit (one-shot)
+    let didAutoSubmit = false;
+    let urlTaskKey = '';
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      urlTaskKey = (urlParams.get('taskKey') || '').trim();
+    } catch (e) {
+      console.error('Failed to read URL params:', e);
+    }
+
+    let currentStoryId = '';
+    let fetchedTestCases = [];
+    let config = {
+      baseUrl: 'https://example.com',
+      username: '',
+      password: '',
+      headless: true,
+      slowMo: 0
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const storyId = document.getElementById('storyId').value.trim();
+
+      if (!storyId) {
+        showError('Please enter a Story ID');
+        return;
+      }
+
+      hideError();
+      hideSuccess();
+      results.classList.remove('active');
+      loading.classList.add('active');
+      submitBtn.disabled = true;
+
+      try {
+        const response = await fetch(`/api/story/${storyId}`);
+        const data = await response.json();
+
+        loading.classList.remove('active');
+        submitBtn.disabled = false;
+
+        if (!response.ok) {
+          showError(data.error || 'Failed to fetch test cases');
+          return;
+        }
+
+        if (data.success) {
+          currentStoryId = storyId;
+          fetchedTestCases = data.testCases;
+          showSuccess(`✅ Found ${data.testCasesCount} test cases. Select the ones you want to generate.`);
+          displayTestCases(data.testCases);
+          results.classList.add('active');
+        } else {
+          showError('No test cases found for this story');
+        }
+      } catch (error) {
+        loading.classList.remove('active');
+        submitBtn.disabled = false;
+        showError('Network error. Make sure the server is running.');
+        console.error(error);
+      }
+    });
+
+    if (urlTaskKey && !didAutoSubmit) {
+      didAutoSubmit = true;
+      const storyInput = document.getElementById('storyId');
+      if (storyInput) {
+        storyInput.value = urlTaskKey;
+      }
+
+      // Submit after listener is registered
+      if (typeof form?.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else if (submitBtn) {
+        submitBtn.click();
+      }
+    }
+
+    function displayTestCases(testCases) {
+      testCasesList.innerHTML = '';
+
+      testCases.forEach(tc => {
+        const row = document.createElement('tr');
+        const priorityClass = tc.priority.toLowerCase() === 'high' ? 'badge-priority-high' :
+          tc.priority.toLowerCase() === 'medium' ? 'badge-priority-medium' : 'badge-priority-low';
+
+        row.innerHTML = `
+                    <td class="text-center">
+                        <input type="checkbox" class="form-check-input tc-checkbox" value="${tc.id}" />
+                    </td>
+                    <td><strong class="text-brand-blue">${tc.id}</strong></td>
+                    <td>${tc.name}</td>
+                    <td><span class="badge ${priorityClass}">${tc.priority}</span></td>
+                    <td><span class="badge badge-status">${tc.status}</span></td>
+                `;
+        testCasesList.appendChild(row);
+      });
+    }
+
+    selectAllBtn.addEventListener('click', () => {
+      document.querySelectorAll('.tc-checkbox').forEach(cb => cb.checked = true);
+      document.getElementById('selectAllCheckbox').checked = true;
+    });
+
+    deselectAllBtn.addEventListener('click', () => {
+      document.querySelectorAll('.tc-checkbox').forEach(cb => cb.checked = false);
+      document.getElementById('selectAllCheckbox').checked = false;
+    });
+
+    document.getElementById('selectAllCheckbox').addEventListener('change', function () {
+      document.querySelectorAll('.tc-checkbox').forEach(cb => cb.checked = this.checked);
+    });
+
+    generatePromptBtn.addEventListener('click', async () => {
+      const selectedIds = Array.from(document.querySelectorAll('.tc-checkbox:checked'))
+        .map(cb => cb.value);
+
+      if (selectedIds.length === 0) {
+        showError('Please select at least one test case');
+        return;
+      }
+
+      hideError();
+      generatePromptBtn.disabled = true;
+      generatePromptBtn.textContent = 'Generating...';
+
+      try {
+        const response = await fetch('/api/generate-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            storyId: currentStoryId,
+            testCaseIds: selectedIds,
+            config: config
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          showSuccess(`✅ Prompt file generated: ${data.promptFile}`);
+        } else {
+          showError(data.error || 'Failed to generate prompt file');
+        }
+      } catch (error) {
+        showError('Network error while generating prompt');
+        console.error(error);
+      } finally {
+        generatePromptBtn.disabled = false;
+        generatePromptBtn.textContent = 'Generate Prompt File';
+      }
+    });
+
+    function showError(message) {
+      errorDiv.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${message}`;
+      errorDiv.style.display = 'block';
+    }
+
+    function hideError() {
+      errorDiv.style.display = 'none';
+    }
+
+    function showSuccess(message) {
+      successDiv.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${message}`;
+      successDiv.style.display = 'block';
+    }
+
+    function hideSuccess() {
+      successDiv.style.display = 'none';
+    }
+    // Theme toggle (light/dark)
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+
+    function applyTheme(theme) {
+      if (theme === 'dark') {
+        document.body.classList.add('dark-mode');
+        themeToggleBtn.innerHTML = '<i class="bi bi-sun-fill me-1"></i>Light mode';
+      } else {
+        document.body.classList.remove('dark-mode');
+        themeToggleBtn.innerHTML = '<i class="bi bi-moon-stars-fill me-1"></i>Dark mode';
+      }
+    }
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('orchestrator-theme') || 'light';
+    applyTheme(savedTheme);
+
+    // Handle toggle click
+    themeToggleBtn.addEventListener('click', () => {
+      const newTheme = document.body.classList.contains('dark-mode') ? 'light' : 'dark';
+      applyTheme(newTheme);
+      localStorage.setItem('orchestrator-theme', newTheme);
+    });
+
+  </script>
+</body>
+
+</html>
