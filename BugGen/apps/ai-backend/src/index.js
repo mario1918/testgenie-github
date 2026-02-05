@@ -93,7 +93,7 @@ app.get("/api/task/:issueKey", async (req, res) => {
       return results;
     };
 
-    const testsWithStatus = await mapWithConcurrency(linkedTests, 6, async (t) => {
+    const testsWithStatus = await mapWithConcurrency(linkedTests, 2, async (t) => {
       const result = await zephyr.getTestStatus({ issueKey: t.key, issueId: t.id, projectId: t.projectId });
       return { key: t.key, summary: t.summary, zephyrStatus: result.status, zephyrError: result.error };
     });

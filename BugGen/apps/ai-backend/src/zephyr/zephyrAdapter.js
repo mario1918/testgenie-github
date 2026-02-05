@@ -88,7 +88,21 @@ class ZephyrSquadAdapter {
     return false;
   }
 
-  async request(method, path) {
+  isRateLimited(err) {
+    if (!(err instanceof ZephyrHttpError)) return false;
+    return err.status === 429;
+  }
+
+  parseRetryAfter(err) {
+    if (!(err instanceof ZephyrHttpError)) return 5000;
+    const text = String(err.responseText || "");
+    const match = text.match(/(\d+)\s*seconds?/i);
+    if (match) return Math.min(parseInt(match[1], 10) * 1000 + 1000, 30000);
+    return 5000;
+  }
+
+  async request(method, path, retryCount = 0) {
+    const maxRetries = 3;
     const { jwt } = await modulesPromise;
     const nowSec = Math.floor(Date.now() / 1000);
 
@@ -122,6 +136,13 @@ class ZephyrSquadAdapter {
       const text = await res.text().catch(() => "");
       const msg = `Zephyr Squad API ${method} ${path} failed: ${res.status} ${res.statusText} ${text}`;
       lastErr = new ZephyrHttpError(msg, { status: res.status, statusText: res.statusText, responseText: text });
+
+      if (this.isRateLimited(lastErr) && retryCount < maxRetries) {
+        const waitMs = this.parseRetryAfter(lastErr);
+        console.log(`Rate limited by Zephyr, waiting ${waitMs}ms before retry ${retryCount + 1}/${maxRetries}...`);
+        await new Promise((r) => setTimeout(r, waitMs));
+        return this.request(method, path, retryCount + 1);
+      }
 
       if (this.isRetryableNotFound(lastErr)) {
         continue;
