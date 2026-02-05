@@ -393,11 +393,25 @@
                   <i class="bi bi-clipboard-check"></i> Test Cases
                   <span class="badge bg-success ms-2" *ngIf="jiraTestCases.length > 0">{{ jiraTestCases.length }}</span>
                 </h3>
-                <button 
-                  (click)="openCreateTestCaseModal()" 
-                  class="btn btn-primary btn-sm">
-                  <i class="bi bi-plus-circle"></i> Create Test Case
-                </button>
+                <div class="d-flex gap-2">
+                  <button 
+                    (click)="openCreateTestCaseModal()" 
+                    class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-circle"></i> Create Test Case
+                  </button>
+                  <button
+                    (click)="redirectToAutomation()"
+                    class="btn btn-warning btn-sm"
+                    title="Go to Automation">
+                    <i class="bi bi-gear"></i> Automation
+                  </button>
+                  <button
+                    (click)="redirectToRaiseBug()"
+                    class="btn btn-danger btn-sm"
+                    title="Raise a bug">
+                    <i class="bi bi-bug"></i> Raise a bug
+                  </button>
+                </div>
               </div>
 
               <!-- Test Cases Grid -->
@@ -414,7 +428,8 @@
                 (refreshTestCases)="loadJiraTestCases()"
                 (goToPage)="testCasesGoToPage($event)"
                 (nextPage)="testCasesNextPage()"
-                (previousPage)="testCasesPreviousPage()">
+                (previousPage)="testCasesPreviousPage()"
+                (selectionChanged)="onTestCaseSelectionChanged($event)">
               </app-test-case-list>
             </div>
             <!-- End of Test Cases Tab -->
