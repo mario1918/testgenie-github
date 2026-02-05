@@ -116,6 +116,7 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
   const [activeTestStepsError, setActiveTestStepsError] = useState<string | null>(null);
   const [activeTestGenerating, setActiveTestGenerating] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const autoLoadKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setActiveTestGenerating(generatePromptInFlight);
@@ -123,6 +124,19 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
     const inFlightFromWindow = typeof w?.__BUGGENAI_AI_STREAM_INFLIGHT === "boolean" ? Boolean(w.__BUGGENAI_AI_STREAM_INFLIGHT) : null;
     aiStreamInFlight = inFlightFromWindow ?? aiStreamInFlight;
     setAiGenerating(aiStreamInFlight);
+
+    // Check URL params for taskKey and auto-fill input
+    const urlParams = new URLSearchParams(window.location.search);
+    const taskKeyParam = urlParams.get("taskKey");
+    console.log("[ZephyrPanel] URL search:", window.location.search, "taskKey:", taskKeyParam);
+    if (taskKeyParam) {
+      const key = extractIssueKey(taskKeyParam) || taskKeyParam.trim();
+      console.log("[ZephyrPanel] Extracted key:", key);
+      if (key) {
+        setInput(key);
+        autoLoadKeyRef.current = key;
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -199,6 +213,14 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
       setIsLoading(false);
     }
   }
+
+  // Auto-load task when input is set from URL params
+  useEffect(() => {
+    if (autoLoadKeyRef.current && input === autoLoadKeyRef.current && !task && !isLoading) {
+      autoLoadKeyRef.current = null;
+      loadTask();
+    }
+  }, [input, task, isLoading]);
 
   async function openTest(test: TestRow) {
     setMessage(null);

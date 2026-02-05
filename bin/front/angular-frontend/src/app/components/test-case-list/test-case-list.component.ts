@@ -33,6 +33,7 @@ export class TestCaseListComponent {
   @Output() goToPage = new EventEmitter<number>();
   @Output() nextPage = new EventEmitter<void>();
   @Output() previousPage = new EventEmitter<void>();
+  @Output() selectionChanged = new EventEmitter<string[]>();
 
   zephyrService = inject(ZephyrService);
   jiraService = inject(JiraService);
@@ -73,7 +74,7 @@ export class TestCaseListComponent {
     return this.selectedIds.size;
   }
 
-  trackById = (_: number, tc: TestCase) => tc.jiraID || tc.id;
+  trackById = (_: number, tc: TestCase) => tc.id;
 
   toggleSelection(id: string, event: Event): void {
     const el = event.target as HTMLInputElement;
@@ -82,6 +83,7 @@ export class TestCaseListComponent {
     } else {
       this.selectedIds.delete(id);
     }
+    this.selectionChanged.emit(Array.from(this.selectedIds));
   }
 
   clearSelection(): void {
@@ -90,29 +92,30 @@ export class TestCaseListComponent {
 
   /** Page-level select-all (affects only currently visible rows) */
   isAllPageSelected(): boolean {
-    return this.testCases.length > 0 && this.testCases.every(tc => this.selectedIds.has(tc.jiraID || tc.id));
+    return this.testCases.length > 0 && this.testCases.every(tc => this.selectedIds.has(tc.id));
   }
 
   isPageIndeterminate(): boolean {
     if (this.testCases.length === 0) return false;
-    const selectedOnPage = this.testCases.filter(tc => this.selectedIds.has(tc.jiraID || tc.id)).length;
+    const selectedOnPage = this.testCases.filter(tc => this.selectedIds.has(tc.id)).length;
     return selectedOnPage > 0 && selectedOnPage < this.testCases.length;
   }
 
   toggleSelectAll(event: Event): void {
     const el = event.target as HTMLInputElement;
     if (el.checked) {
-      this.testCases.forEach(tc => this.selectedIds.add(tc.jiraID || tc.id));
+      this.testCases.forEach(tc => this.selectedIds.add(tc.id));
     } else {
       // Unselect only the current page for intuitive behavior
-      this.testCases.forEach(tc => this.selectedIds.delete(tc.jiraID || tc.id));
+      this.testCases.forEach(tc => this.selectedIds.delete(tc.id));
     }
+    this.selectionChanged.emit(Array.from(this.selectedIds));
   }
 
   /** Bulk execute uses per-row updateExecutionStatus */
   async bulkExecute(): Promise<void> {
     const selectedTestCases = Array.from(this.selectedIds)
-      .map(id => this.testCases.find(t => (t.jiraID || t.id) === id))
+      .map(id => this.testCases.find(t => t.id === id))
       .filter(tc => tc?.executionId); // Only process test cases that have executions
 
     if (selectedTestCases.length === 0) {
@@ -124,7 +127,7 @@ export class TestCaseListComponent {
     const updatePromises = selectedTestCases
       .filter(tc => tc && tc.executionId)
       .map(tc => {
-        const rowId = tc!.jiraID || tc!.id;
+        const rowId = tc!.id;
         return this.updateExecutionStatus(tc!.executionId!, rowId, this.bulkStatus);
       });
 
@@ -145,7 +148,7 @@ export class TestCaseListComponent {
     }
 
     const selectedTestCases = Array.from(this.selectedIds)
-      .map(id => this.testCases.find(t => (t.jiraID || t.id) === id))
+      .map(id => this.testCases.find(t => t.id === id))
       .filter(tc => tc != null);
 
     if (selectedTestCases.length === 0) {
@@ -155,7 +158,7 @@ export class TestCaseListComponent {
 
     // Update all selected test cases in parallel
     const updatePromises = selectedTestCases.map(async (tc) => {
-      const rowId = tc!.jiraID || tc!.id;
+      const rowId = tc!.id;
       this.statusLoadingStates.set(rowId, true);
       
       try {

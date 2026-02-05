@@ -145,6 +145,7 @@ export class AppComponent implements OnInit {
   showViewTestCaseModal = false;
   showCreateExecutionModal = false;
   selectedTestCaseForExecution: string = '';
+  selectedTestCaseIds: string[] = [];
   viewingTestCase: TestCase | null = null;
   skeletonArray = Array(25).fill(0).map((_, i) => i);
 
@@ -1032,11 +1033,23 @@ export class AppComponent implements OnInit {
   }
 
   redirectToAutomation(): void {
-    window.location.href = 'http://localhost:3000/';
+    window.open('http://localhost:3000/', '_blank');
   }
 
   redirectToRaiseBug(): void {
-    window.location.href = 'http://localhost:5173/';
+    let url = 'http://localhost:5173/';
+    if (this.selectedTestCaseIds.length === 1) {
+      const selectedTestCase = this.jiraTestCases.find(tc => tc.id === this.selectedTestCaseIds[0]);
+      if (selectedTestCase?.relatedTask) {
+        url += `?taskKey=${encodeURIComponent(selectedTestCase.relatedTask)}`;
+      }
+    }
+    console.log('Opening Raise a bug URL:', url, 'Selected IDs:', this.selectedTestCaseIds);
+    window.open(url, '_blank');
+  }
+
+  onTestCaseSelectionChanged(selectedIds: string[]): void {
+    this.selectedTestCaseIds = selectedIds;
   }
 
   // Migrated features methods
