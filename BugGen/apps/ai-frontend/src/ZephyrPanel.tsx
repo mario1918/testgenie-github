@@ -96,6 +96,27 @@ async function readJsonOrThrow(res: Response) {
   return (parsed && typeof parsed === "object" ? parsed : {}) as any;
 }
 
+async function fetchWithRetry(url: string, options?: RequestInit, maxRetries = 2): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.status === 500 && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  throw lastError ?? new Error("Request failed after retries");
+}
+
 export default function ZephyrPanel({ isActive = true }: { isActive?: boolean }) {
   const [input, setInput] = useState("");
   const issueKey = useMemo(() => extractIssueKey(input), [input]);
@@ -178,7 +199,7 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
     setPageIndex(0);
 
     try {
-      const res = await fetch(`${API_PREFIX}/api/task/${encodeURIComponent(issueKey)}`);
+      const res = await fetchWithRetry(`${API_PREFIX}/api/task/${encodeURIComponent(issueKey)}`);
       const data = await readJsonOrThrow(res);
 
       setTask(data.task as Task);
@@ -218,7 +239,7 @@ export default function ZephyrPanel({ isActive = true }: { isActive?: boolean })
         return;
       }
 
-      const res = await fetch(`${API_PREFIX}/api/test/${encodeURIComponent(test.key)}/steps`);
+      const res = await fetchWithRetry(`${API_PREFIX}/api/test/${encodeURIComponent(test.key)}/steps`);
       const data = await readJsonOrThrow(res);
       const steps = Array.isArray(data.steps) ? (data.steps as Step[]) : [];
       stepsCacheRef.current.set(test.key, steps);

@@ -59,12 +59,42 @@ function tryParseJson(text) {
   }
 }
 
+function addComponentPrefixToTitle(report) {
+  const component = String(report.component || "").trim();
+  const title = String(report.title || "").trim();
+  
+  if (!component || !title) {
+    return report;
+  }
+  
+  // Check if title already starts with the component prefix
+  const prefixPattern = new RegExp(`^\\[?${component.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]?:\\s*`, 'i');
+  if (prefixPattern.test(title)) {
+    return report;
+  }
+  
+  // Also check for bracket format like [Component]
+  const bracketPattern = new RegExp(`^\\[${component.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'i');
+  if (bracketPattern.test(title)) {
+    return report;
+  }
+  
+  // Replace " > " with ": " in the final title
+  const finalTitle = `${component}: ${title}`.replace(/ > /g, ': ');
+  
+  return {
+    ...report,
+    title: finalTitle
+  };
+}
+
 export function parseBugReportFromClaudeText(text) {
   const trimmed = String(text || "").trim();
 
   const direct = tryParseJson(trimmed);
   if (direct.ok) {
-    return bugReportSchema.parse(direct.value);
+    const parsed = bugReportSchema.parse(direct.value);
+    return addComponentPrefixToTitle(parsed);
   }
 
   const first = trimmed.indexOf("{");
@@ -73,7 +103,8 @@ export function parseBugReportFromClaudeText(text) {
     const sliced = trimmed.slice(first, last + 1);
     const slicedParsed = tryParseJson(sliced);
     if (slicedParsed.ok) {
-      return bugReportSchema.parse(slicedParsed.value);
+      const parsed = bugReportSchema.parse(slicedParsed.value);
+      return addComponentPrefixToTitle(parsed);
     }
   }
 
