@@ -1,5 +1,0 @@
-
-> jira-test-automation@1.0.0 dev
-> ts-node src/server.ts
-
-❌ Missing required environment variables: JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
