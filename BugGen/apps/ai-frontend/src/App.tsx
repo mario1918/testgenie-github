@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { COMPONENT_ASSIGNEES_BY_COMPONENT } from "./generated/componentAssignees";
+import { COMPONENT_ASSIGNEES_BY_COMPONENT, COMPONENT_ASSIGNEES_BY_ASSIGNEE } from "./generated/componentAssignees";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ZephyrPanel from "./ZephyrPanel";
@@ -430,6 +430,45 @@ export default function App() {
       .replace(/\s+/g, " ");
   }
 
+  function detectComponentFromDescription(text: string): { component: string; assignee: string } | null {
+    if (!text) return null;
+    const normalizedText = normalizeName(text);
+
+    const componentNames = Object.keys(COMPONENT_ASSIGNEES_BY_COMPONENT);
+    
+    // Common words to ignore when matching (too generic, would cause false positives)
+    const ignoreWords = new Set(["search", "management", "reports", "chain", "details", "center", "gateway", "export", "doc", "manage"]);
+    
+    const matches: { component: string; assignee: string; priority: number; isExact: boolean }[] = [];
+
+    for (const component of componentNames) {
+      const normalizedComponent = normalizeName(component);
+      const assignee = COMPONENT_ASSIGNEES_BY_COMPONENT[component];
+
+      // Priority 1: Exact full component name match
+      if (normalizedText.includes(normalizedComponent)) {
+        matches.push({ component, assignee, priority: 1000 + normalizedComponent.length, isExact: true });
+        continue;
+      }
+
+      // Priority 2: Match significant words from component name (excluding generic words)
+      const words = normalizedComponent.split(/[\s\-_]+/).filter(w => w.length > 2 && !ignoreWords.has(w));
+      for (const word of words) {
+        const wordBoundaryRegex = new RegExp(`\\b${word}\\b`);
+        if (wordBoundaryRegex.test(normalizedText)) {
+          matches.push({ component, assignee, priority: word.length, isExact: false });
+          break;
+        }
+      }
+    }
+
+    if (matches.length === 0) return null;
+
+    // Sort by priority (exact matches first via higher priority, then by word length)
+    matches.sort((a, b) => b.priority - a.priority);
+    return { component: matches[0].component, assignee: matches[0].assignee };
+  }
+
   function parsePromptJiraHints(prompt: string): PromptJiraHints {
     const text = String(prompt || "");
 
@@ -619,19 +658,31 @@ export default function App() {
 
     const canUseHeuristic = promptJiraHints.components.length === 0;
 
-    // Priority order to avoid overlaps
-    if (!assigneeName && canUseHeuristic && containsAny(["BOM", "ACL", "AML"])) {
-      assigneeName = "Ahmad Esmat";
-      componentNames = ["BOM Manager", "ACL Management", "AML Management"];
-    } else if (!assigneeName && canUseHeuristic && containsAny(["supplychain", "supply chain"])) {
-      assigneeName = "Ahmed Ghanem";
-      componentNames = ["Supply Chain"];
-    } else if (!assigneeName && canUseHeuristic && containsAny(["Alert", "Admin"])) {
-      assigneeName = "Awad Ayoub";
-      componentNames = ["Admin", "Alert"];
-    } else if (!assigneeName && canUseHeuristic && containsAny(["supplier"])) {
-      assigneeName = "Yasser Hosny";
-      componentNames = ["Supplier"];
+    // // Priority order to avoid overlaps
+    // if (!assigneeName && canUseHeuristic && containsAny(["BOM", "ACL", "AML"])) {
+    //   assigneeName = "Ahmad Esmat";
+    //   componentNames = ["BOM Manager", "ACL Management", "AML Management"];
+    // } else if (!assigneeName && canUseHeuristic && containsAny(["supplychain", "supply chain"])) {
+    //   assigneeName = "Ahmed Ghanem";
+    //   componentNames = ["Supply Chain"];
+    // } else if (!assigneeName && canUseHeuristic && containsAny(["Alert", "Admin"])) {
+    //   assigneeName = "Awad Ayoub";
+    //   componentNames = ["Admin", "Alert"];
+    // } else if (!assigneeName && canUseHeuristic && containsAny(["supplier"])) {
+    //   assigneeName = "Yasser Hosny";
+    //   componentNames = ["Supplier"];
+    // }
+
+    // Auto-detect component from user's bug description when no components were explicitly provided
+    if (!assigneeName && canUseHeuristic) {
+      const routingText = [submittedQuestion, report?.title, report?.description, report?.component]
+        .filter(Boolean)
+        .join(" ");
+      const detected = detectComponentFromDescription(routingText);
+      if (detected) {
+        assigneeName = detected.assignee;
+        componentNames = [detected.component];
+      }
     }
 
     if (assigneeName && canSetAssignee) {
@@ -1293,7 +1344,8 @@ export default function App() {
               .filter(Boolean)
               .join("\n")
           );
-          setSelectedJiraPriority(fromReport || fromPrompt || inferred);
+          // Always set a priority - never leave blank. Default to "Minor" as fallback.
+          setSelectedJiraPriority(fromReport || fromPrompt || inferred || "Minor");
         }
 
         suppressAutoScrollRef.current = true;
@@ -2039,12 +2091,16 @@ export default function App() {
                               onChange={(e) => setSelectedJiraPriority(e.target.value)}
                               disabled={jiraLoading}
                             >
-                              <option value="">-- Select Priority --</option>
-                              {jiraPriorities.map((p) => (
-                                <option key={p.id} value={p.name}>
-                                  {p.name}
-                                </option>
-                              ))}
+                              {jiraPriorities
+                                .filter((p) => {
+                                  const name = (p.name || "").toLowerCase().trim();
+                                  return name && name !== "no priority" && !name.includes("select");
+                                })
+                                .map((p) => (
+                                  <option key={p.id} value={p.name}>
+                                    {p.name}
+                                  </option>
+                                ))}
                             </select>
                           </div>
 

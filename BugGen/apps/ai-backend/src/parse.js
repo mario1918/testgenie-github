@@ -48,7 +48,7 @@ const bugReportSchema = z.object({
   reproducibility: z.string().optional().default(""),
   workaround: z.string().nullable().optional().default(null),
   impact: z.string().optional().default(""),
-  jiraPriority: jiraPrioritySchema.optional()
+  jiraPriority: jiraPrioritySchema.optional().default("Minor")
 });
 
 function tryParseJson(text) {

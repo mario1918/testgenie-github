@@ -231,7 +231,52 @@ body {
   color: white;
   padding: 10px 12px;
   cursor: pointer;
-  margin-top: -10px
+  height: 37px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  align-content: center;
+}
+
+.zephyrButtonContent {
+  position: relative;
+  display: inline-block;
+}
+
+.zephyrButtonContent::before {
+  content: attr(data-text);
+  visibility: hidden;
+  pointer-events: none;
+  display: inline-block;
+}
+
+.zephyrButtonContentInner {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.zephyrTwoDots {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.zephyrTwoDotsDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  opacity: 0.35;
+  animation: zephyrTwoDotsPulse 0.9s ease-in-out infinite;
+}
+
+.zephyrTwoDotsDot:nth-child(2) {
+  animation-delay: 0.15s;
 }
 
 .zephyrButton:disabled {
@@ -450,20 +495,25 @@ body {
 }
 
 .zephyrDialog {
-  width: min(900px, calc(100vw - 24px));
-  max-height: min(720px, calc(100vh - 24px));
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 16px;
   padding: 0;
   background: rgba(14, 18, 45, 0.98);
   color: var(--text-primary);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-  overflow: visible;
+  overflow: hidden;
   position: fixed;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   margin: 0;
+}
+
+.zephyrDialog[open] {
+  display: flex;
+  flex-direction: column;
 }
 
 .zephyrDialog::backdrop {
@@ -489,6 +539,8 @@ body {
   padding: 14px 16px;
   display: grid;
   gap: 12px;
+  overflow: auto;
+  min-height: 0;
 }
 
 .zephyrDialogFooter {
@@ -528,10 +580,11 @@ body {
 }
 
 .zephyrStepsWrap {
-  min-height: 260px;
-  max-height: 320px;
+  min-height: 120px;
+  max-height: min(420px, 45vh);
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .zephyrStepsTable {
@@ -603,6 +656,18 @@ body {
   }
   100% {
     background-position: -100% 0;
+  }
+}
+
+@keyframes zephyrTwoDotsPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
   }
 }
 
