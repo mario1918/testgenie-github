@@ -75,8 +75,12 @@ app.get("/api/task/:issueKey", async (req, res) => {
       return;
     }
 
+    const testFilter = env.ZEPHYR_TEST_CASE_FILTER;
+    console.log(`[/api/task/${issueKey}] ZEPHYR_TEST_CASE_FILTER=${testFilter}`);
+
     const issue = await jira.getIssue(issueKey);
     const linkedTests = await jira.getLinkedIssuesByType(issueKey, "Test");
+    console.log(`[/api/task/${issueKey}] Found ${linkedTests.length} linked test(s)`);
 
     const mapWithConcurrency = async (items, limit, fn) => {
       const results = new Array(items.length);
@@ -94,14 +98,16 @@ app.get("/api/task/:issueKey", async (req, res) => {
     };
 
     const testsWithStatus = await mapWithConcurrency(linkedTests, 2, async (t) => {
-      const result = await zephyr.getTestStatus({ issueKey: t.key, issueId: t.id, projectId: t.projectId });
-      return { key: t.key, summary: t.summary, zephyrStatus: result.status, zephyrError: result.error };
+      try {
+        const result = await zephyr.getTestStatus({ issueKey: t.key, issueId: t.id, projectId: t.projectId });
+        return { key: t.key, summary: t.summary, zephyrStatus: result.status, zephyrError: result.error };
+      } catch (zErr) {
+        console.error(`[/api/task/${issueKey}] Zephyr error for ${t.key}:`, zErr?.message);
+        return { key: t.key, summary: t.summary, zephyrStatus: "UNKNOWN", zephyrError: zErr?.message ?? "Zephyr fetch failed" };
+      }
     });
 
     const failingTests = testsWithStatus.filter((t) => (t.zephyrStatus ?? "UNKNOWN") === "FAIL");
-
-    const filterRaw = String(process.env.ZEPHYR_TEST_CASE_FILTER || "fail").trim().toLowerCase();
-    const testFilter = filterRaw === "all" || filterRaw === "pass" || filterRaw === "fail" ? filterRaw : "fail";
 
     const filteredTests =
       testFilter === "all"
@@ -123,6 +129,8 @@ app.get("/api/task/:issueKey", async (req, res) => {
       return String(a.key).localeCompare(String(b.key));
     });
 
+    console.log(`[/api/task/${issueKey}] Returning ${filteredTests.length} test(s) (filter=${testFilter}, total=${testsWithStatus.length}, failing=${failingTests.length})`);
+
     res.json({
       task: {
         key: issue.key,
@@ -134,18 +142,24 @@ app.get("/api/task/:issueKey", async (req, res) => {
       },
       meta: {
         linkedTestsCount: linkedTests.length,
-        failingTestsCount: failingTests.length
+        failingTestsCount: failingTests.length,
+        testFilter
       },
       tests: filteredTests
     });
   } catch (err) {
     const raw = String(err?.message ?? "");
     const issueKey = String(req.params.issueKey ?? "");
+    console.error(`[/api/task/${issueKey}] Error:`, raw);
     if (raw.includes("404") && raw.includes("Issue does not exist or you do not have permission to see it")) {
       res.status(404).json({ error: `Issue '${issueKey}' does not exist or you do not have permission to see it.` });
       return;
     }
-    res.status(400).json({ error: err?.message ?? "Unknown error" });
+    if (raw.includes("not configured")) {
+      res.status(503).json({ error: err?.message ?? "Service not configured" });
+      return;
+    }
+    res.status(500).json({ error: err?.message ?? "Unknown error" });
   }
 });
 

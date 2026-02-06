@@ -27,6 +27,10 @@ const envSchema = z.object({
   ZEPHYR_BASE_URL: z.string().optional(),
   ZEPHYR_ACCESS_KEY: z.string().optional(),
   ZEPHYR_SECRET_KEY: z.string().optional(),
+  ZEPHYR_TEST_CASE_FILTER: z.string().optional().default("fail").transform((v) => {
+    const lower = String(v || "fail").trim().toLowerCase();
+    return lower === "all" || lower === "pass" || lower === "fail" ? lower : "fail";
+  }),
 
   API_KEY: z.string().min(1).optional(),
 

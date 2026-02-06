@@ -130,22 +130,129 @@ function inferReproducibilityFromDescription(report, originalPrompt = "") {
   return report;
 }
 
+function inferPriorityFromDescription(report, originalPrompt = "") {
+  const description = String(report.description || "").toLowerCase();
+  const title = String(report.title || "").toLowerCase();
+  const actualResult = String(report.actualResult || "").toLowerCase();
+  const impact = String(report.impact || "").toLowerCase();
+  const userPrompt = String(originalPrompt || "").toLowerCase();
+  const allText = `${userPrompt} ${description} ${title} ${actualResult} ${impact}`;
+
+  // Blocker indicators - system unusable, data loss, security issues
+  const blockerPatterns = [
+    /\b(system|application|app|site|website|platform)\s+(crash(es|ed|ing)?|down|unavailable|not\s+working|broken|dead)\b/,
+    /\bdata\s+(loss|lost|deleted|corruption|corrupted)\b/,
+    /\bsecurity\s+(breach|vulnerability|exploit|hole)\b/,
+    /\bcannot\s+(login|access|use|open|start|launch)\s+(the\s+)?(system|application|app|platform)\b/,
+    /\b(complete|total|entire)\s+(outage|failure|breakdown)\b/,
+    /\bblocks?\s+(all|entire|complete|everything|production|release|deployment)\b/,
+    /\b(production|live|prod)\s+(down|broken|not\s+working)\b/,
+    /\b(all|every|no)\s+users?\s+(cannot|unable\s+to|can't)\b/,
+    /\bsystem\s+is\s+(completely\s+)?(broken|unusable|inaccessible)\b/
+  ];
+
+  for (const pattern of blockerPatterns) {
+    if (pattern.test(allText)) {
+      return { ...report, jiraPriority: "Blocker" };
+    }
+  }
+
+  // Critical indicators - major feature broken, no workaround, affects many users
+  const criticalPatterns = [
+    /\b(critical|severe|major)\s+(bug|issue|problem|error|defect)\b/,
+    /\b(main|primary|core|key|essential|critical)\s+(feature|functionality)\s+(not\s+working|broken|fails?|failing)\b/,
+    /\bno\s+workaround\b/,
+    /\baffects?\s+(many|all|most|multiple|numerous)\s+users?\b/,
+    /\b(many|multiple|several|all)\s+users?\s+(affected|impacted|experiencing|reporting)\b/,
+    /\b(payment|checkout|transaction|order)\s+(fail(s|ed|ing)?|not\s+working|broken)\b/,
+    /\b(revenue|business)\s+(impact|loss|affecting)\b/,
+    /\bcompletely\s+(broken|unusable|non-functional)\b/,
+    /\bproduction\s+(issue|bug|problem|error)\b/
+  ];
+
+  for (const pattern of criticalPatterns) {
+    if (pattern.test(allText)) {
+      return { ...report, jiraPriority: "Critical" };
+    }
+  }
+
+  // Major indicators - significant impact but has workaround
+  const majorPatterns = [
+    /\b(significant|substantial|considerable|important)\s+(impact|issue|problem)\b/,
+    /\bhas\s+workaround\b/,
+    /\bmissing\b/,
+    /\bworkaround\s+(available|exists|possible)\b/,
+    /\b(feature|functionality)\s+(partially|sometimes)\s+(broken|not\s+working|fails?)\b/,
+    /\b(some|several|few)\s+users?\s+(affected|impacted|experiencing)\b/,
+    /\b(incorrect|wrong|invalid)\s+(data|calculation|result|output)\b/,
+    /\bperformance\s+(degradation|issue|problem|slow)\b/,
+    /\b(slow|sluggish|laggy|delayed)\s+(response|loading|performance)\b/
+  ];
+
+  for (const pattern of majorPatterns) {
+    if (pattern.test(allText)) {
+      return { ...report, jiraPriority: "Major" };
+    }
+  }
+
+  // Trivial indicators - cosmetic, typos, minor UI issues
+  const trivialPatterns = [
+    /\b(cosmetic|visual|aesthetic|styling|css)\s+(issue|problem|bug)\b/,
+    /\b(typo|spelling|grammar|wording)\s+(error|mistake|issue)\b/,
+    /\b(minor|small|tiny|slight)\s+(ui|visual|display|cosmetic)\s+(issue|glitch|problem)\b/,
+    /\b(alignment|spacing|padding|margin|color|font)\s+(issue|problem|off|wrong)\b/,
+    /\btext\s+(alignment|color|size|formatting)\b/,
+    /\bno\s+(functional|business|user)\s+impact\b/,
+    /\bjust\s+a\s+(typo|visual|cosmetic|ui)\b/
+  ];
+
+  for (const pattern of trivialPatterns) {
+    if (pattern.test(allText)) {
+      return { ...report, jiraPriority: "Trivial" };
+    }
+  }
+
+  // Keep existing priority if no patterns match
+  return report;
+}
+
 function normalizeComponent(report, originalPrompt = "") {
   const component = String(report.component || "").trim();
   const componentLower = component.toLowerCase();
   const description = String(report.description || "").toLowerCase();
   const title = String(report.title || "").toLowerCase();
-  const userPrompt = String(originalPrompt || "").toLowerCase();
+  const userPromptOriginal = String(originalPrompt || "");
+  const userPrompt = userPromptOriginal.toLowerCase();
   const allText = `${userPrompt} ${description} ${title}`;
 
-  // Check for BOM-related keywords FIRST (highest priority)
-  // This catches: "bom", "open a bom", "openbom", "bom manager", etc.
-  if (allText.includes("bom") || componentLower.includes("bom")) {
-    return { ...report, component: "BOM Manager" };
+  // PRIORITY 1: Check if user prompt has "- Components:" field and extract it (preserve original case)
+  const componentsMatch = userPromptOriginal.match(/^[\s-]*components?\s*:\s*(.+?)$/im);
+  if (componentsMatch) {
+    const extractedComponent = componentsMatch[1].trim();
+    if (extractedComponent && extractedComponent !== "-") {
+      // Return the exact component from the prompt with original case preserved
+      return { ...report, component: extractedComponent };
+    }
   }
 
-  // If AI returned "Supply Chain" but user mentioned BOM-related terms
-  if (componentLower.includes("supply chain") && allText.includes("bom")) {
+  // PRIORITY 2: If AI already provided a valid component, keep it
+  if (component && component !== "-") {
+    // Check for BOM-related keywords - override if needed
+    if (allText.includes("bom") || componentLower.includes("bom")) {
+      return { ...report, component: "BOM Manager" };
+    }
+    
+    // If AI returned "Supply Chain" but user mentioned BOM-related terms
+    if (componentLower.includes("supply chain") && allText.includes("bom")) {
+      return { ...report, component: "BOM Manager" };
+    }
+    
+    return report;
+  }
+
+  // PRIORITY 3: Fallback to keyword-based detection
+  // Check for BOM-related keywords FIRST (highest priority)
+  if (allText.includes("bom")) {
     return { ...report, component: "BOM Manager" };
   }
 
@@ -154,6 +261,7 @@ function normalizeComponent(report, originalPrompt = "") {
     { patterns: [/\bpart[- ]?search\b/i, /\bsearch\s+part/i], component: "Part Search" },
     { patterns: [/\bpart[- ]?details?\b/i], component: "Part Details" },
     { patterns: [/\bcompliance\b/i, /\brohs\b/i, /\breach\b/i], component: "Compliance" },
+    { patterns: [/\bsupply[- ]?chain\b/i], component: "Supply Chain" },
     { patterns: [/\breport[s]?\b/i], component: "Reports" },
     { patterns: [/\bexport\b/i], component: "Export" },
     { patterns: [/\bimport\b/i], component: "Import" },
@@ -176,22 +284,33 @@ function normalizeComponent(report, originalPrompt = "") {
 
 function addComponentPrefixToTitle(report) {
   const component = String(report.component || "").trim();
-  const title = String(report.title || "").trim();
+  let title = String(report.title || "").trim();
   
   if (!component || !title) {
     return report;
   }
   
-  // Check if title already starts with the component prefix
+  // Remove any existing component prefix patterns from the title
+  // Pattern 1: "Component: title" or "[Component]: title"
   const prefixPattern = new RegExp(`^\\[?${component.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]?:\\s*`, 'i');
-  if (prefixPattern.test(title)) {
-    return report;
+  title = title.replace(prefixPattern, '');
+  
+  // Pattern 2: "[Component] title" (bracket without colon)
+  const bracketPattern = new RegExp(`^\\[${component.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*`, 'i');
+  title = title.replace(bracketPattern, '');
+  
+  // Pattern 3: Remove any other component name at the start (case insensitive)
+  const componentWords = component.split(/\s+/);
+  if (componentWords.length > 0) {
+    const componentPattern = new RegExp(`^${componentWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')}[:\\s-]+`, 'i');
+    title = title.replace(componentPattern, '');
   }
   
-  // Also check for bracket format like [Component]
-  const bracketPattern = new RegExp(`^\\[${component.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'i');
-  if (bracketPattern.test(title)) {
-    return report;
+  // Clean up the title
+  title = title.trim();
+  if (!title) {
+    // If title became empty after cleanup, use original
+    title = String(report.title || "").trim();
   }
   
   // Replace " > " with ": " in the final title
@@ -210,7 +329,8 @@ export function parseBugReportFromClaudeText(text, originalPrompt = "") {
   if (direct.ok) {
     const parsed = bugReportSchema.parse(direct.value);
     const withReproducibility = inferReproducibilityFromDescription(parsed, originalPrompt);
-    const withComponent = normalizeComponent(withReproducibility, originalPrompt);
+    const withPriority = inferPriorityFromDescription(withReproducibility, originalPrompt);
+    const withComponent = normalizeComponent(withPriority, originalPrompt);
     return addComponentPrefixToTitle(withComponent);
   }
 
@@ -222,7 +342,8 @@ export function parseBugReportFromClaudeText(text, originalPrompt = "") {
     if (slicedParsed.ok) {
       const parsed = bugReportSchema.parse(slicedParsed.value);
       const withReproducibility = inferReproducibilityFromDescription(parsed, originalPrompt);
-      const withComponent = normalizeComponent(withReproducibility, originalPrompt);
+      const withPriority = inferPriorityFromDescription(withReproducibility, originalPrompt);
+      const withComponent = normalizeComponent(withPriority, originalPrompt);
       return addComponentPrefixToTitle(withComponent);
     }
   }

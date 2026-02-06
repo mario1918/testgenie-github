@@ -61,18 +61,23 @@ function buildAiBugPrompt(task: Task | null, test: TestRow | null, steps: Step[]
 
   const parentKey = task?.parent?.key ? String(task.parent.key) : "-";
   const components = Array.isArray(task?.components) && task?.components?.length ? task.components.join(", ") : "-";
-  const sprintName = task?.sprint?.name ? String(task.sprint.name) : task?.sprint ? String(task.sprint) : "-";
+  const sprintName = task?.sprint?.name ? String(task.sprint.name) : task?.sprint ? String(task.sprint) : null;
 
-  return [
+  const lines = [
     "Input Data:",
     `- Test Case ID: ${testId}`,
     `- Test Case Summary: ${testSummary}`,
     "- Test Case Steps:",
     `${stepsText}`,
     `- Components: ${components}`,
-    `- Parent Key: ${parentKey}`,
-    `- Sprint: ${sprintName}`
-  ].join("\n");
+    `- Parent Key: ${parentKey}`
+  ];
+
+  if (sprintName) {
+    lines.push(`- Sprint: ${sprintName}`);
+  }
+
+  return lines.join("\n");
 }
 
 async function readJsonOrThrow(res: Response) {
